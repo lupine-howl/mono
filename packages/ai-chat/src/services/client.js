@@ -1,5 +1,12 @@
 // Tiny OpenAI client helpers
-export function makeOpenAIClient({ apiKey, baseUrl = "https://api.openai.com/v1" } = {}) {
+import { createLogger } from "@loki/http-base/util";
+
+const logger = createLogger({ name: "[@loki/chat-ai]" });
+
+export function makeOpenAIClient({
+  apiKey,
+  baseUrl = "https://api.openai.com/v1",
+} = {}) {
   if (!apiKey) console.warn("[openai] Missing OPENAI_API_KEY");
   const headers = {
     "content-type": "application/json",
@@ -13,6 +20,11 @@ export function makeOpenAIClient({ apiKey, baseUrl = "https://api.openai.com/v1"
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    logger.info("chat completion response", {
+      ok: res.ok,
+      status: res.status,
+      data,
+    });
     return { ok: res.ok, status: res.status, data };
   }
 

@@ -119,9 +119,10 @@ export class TaskList extends LitElement {
                   e.stopPropagation();
                   this.tasks.remove(t?.[pk]);
                 }}
-                title="Remove"
+                title="Delete"
+                aria-label="Delete"
               >
-                ✕
+                ❌
               </button>
             </li>
           `

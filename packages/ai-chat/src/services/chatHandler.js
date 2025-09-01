@@ -5,6 +5,10 @@ import {
   maybeExecuteFirstTool,
 } from "./util.js";
 
+import { createLogger } from "@loki/http-base/util";
+
+const logger = createLogger({ name: "[@loki/chat-ai]" });
+
 export function mountChatRoute(
   router,
   registry,
@@ -27,6 +31,7 @@ export function mountChatRoute(
         execute = false,
         messages,
         temperature,
+        max_completion_tokens = 8192,
         max_tokens,
         tool_choice: requestedToolChoice, // "none" | "auto" | forced
       } = args || {};
@@ -53,8 +58,11 @@ export function mountChatRoute(
         tools,
         tool_choice,
         ...(temperature != null ? { temperature } : {}),
+        ...(max_completion_tokens != null ? { max_completion_tokens } : {}),
         ...(max_tokens != null ? { max_tokens } : {}),
       };
+
+      logger.info("chat completion payload", { payload });
 
       const { ok, status, data } = await client.chatCompletions(payload);
       if (!ok) {

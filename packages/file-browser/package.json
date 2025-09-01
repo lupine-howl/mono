@@ -18,26 +18,36 @@
     "./util": "./dist/shared/index.js"
   },
   "scripts": {
-    "build:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --external:lit --outdir=dist/ui --log-level=info",
-    "build:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --outdir=dist/services --log-level=info",
-    "build:shared": "esbuild src/shared/index.js --bundle --format=esm --platform=node --outdir=dist/shared --log-level=info",
-    "build:plugin": "cp -R src/plugin dist/plugin",
-    "dev:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --external:lit --outdir=dist/ui --log-level=info --watch",
-    "dev:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --outdir=dist/services --log-level=info --watch",
-    "dev:shared": "esbuild src/shared/index.js --bundle --format=esm --platform=node --outdir=dist/shared --log-level=info --watch",
-    "build": "npm i && rm -rf dist && npm run build:ui && npm run build:services && npm run build:shared && npm run build:plugin",
-    "build:dev": "npm run dev:ui && npm run dev:services && npm run dev:shared",
+    "build:ui": "esbuild src/ui/*.js                 --outdir=dist/ui       --bundle --format=esm --platform=browser --packages=external --log-level=warning",
+    "build:schemas": "esbuild src/schemas/*.js       --outdir=dist/schemas  --bundle --format=esm --platform=browser --packages=external --log-level=warning",
+    "build:services": "esbuild src/services/index.js --outdir=dist/services --bundle --format=esm --platform=node    --packages=external --log-level=warning",
+    "build:shared": "esbuild src/shared/*.js         --outdir=dist/shared   --bundle --format=esm --platform=node    --packages=external --log-level=warning",
+    "dev:schemas": "esbuild src/schemas/*.js         --outdir=dist/schemas  --bundle --format=esm --platform=browser --packages=external --log-level=warning --watch",
+    "dev:ui": "esbuild src/ui/*.js                   --outdir=dist/ui       --bundle --format=esm --platform=browser --packages=external --log-level=warning --watch",
+    "dev:services": "esbuild src/services/index.js   --outdir=dist/services --bundle --format=esm --platform=node    --packages=external --log-level=warning --watch",
+    "dev:shared": "esbuild src/shared/index.js       --outdir=dist/shared   --bundle --format=esm --platform=node    --packages=external --log-level=warning --watch",
+    "build:plugin": "rsync -a --delete src/plugin/ dist/plugin/",
+    "dev:plugin": "npm run build:plugin && chokidar 'src/plugin/**' -i '**/.git/**' -c 'rsync -a --delete src/plugin/ dist/plugin/' --initial",
+    "build": "npm i && rm -rf dist && npm run build:ui && npm run build:services && npm run build:shared && npm run build:plugin && npm run build:schemas",
+    "watch": "npm run build && npm-run-all -p dev:ui dev:services dev:shared dev:plugin dev:schemas",
     "publish:patch": "npm version patch --no-git-tag-version && npm publish",
     "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
   },
   "dependencies": {
-    "@loki/minihttp": "../minihttp",
+    "@loki/tasks": "../tasks",
     "@loki/layout": "../layout",
-    "@loki/utilities": "../utilities",
     "@loki/ai-chat": "../ai-chat",
+    "@loki/minihttp": "../minihttp",
+    "@loki/http-base": "../http-base",
+    "@loki/utilities": "../utilities",
+    "@loki/ai-projects": "../ai-projects"
+  },
+  "peerDependencies": {
     "lit": "^3.3.1"
   },
   "devDependencies": {
-    "esbuild": "^0.25.9"
+    "chokidar-cli": "^3.0.0",
+    "esbuild": "^0.25.9",
+    "npm-run-all": "^4.1.5"
   }
 }

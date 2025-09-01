@@ -137,29 +137,58 @@ export class AIChatService extends EventTarget {
     const p = (persona ?? "").trim();
     const ci = (customInstructions ?? "").trim();
     if (p) msgs.push({ role: "system", content: p });
-    if (ci) msgs.push({ role: "system", content: ci }); // NEW: keep as a top-level system message
+    if (ci) msgs.push({ role: "system", content: ci });
 
-    for (const m of history ?? []) {
+    const H = Array.isArray(history) ? history : [];
+
+    // CONFIG
+    const KEEP_LATEST_ATTACHMENTS = 1; // keep last N attachments untruncated
+    const ATTACH_TRUNC_LIMIT = 1000; // chars
+
+    // Find indices of the last N attachment messages (anywhere in the history)
+    const latestAttachmentIdx = new Set();
+    if (KEEP_LATEST_ATTACHMENTS > 0) {
+      let kept = 0;
+      for (
+        let i = H.length - 1;
+        i >= 0 && kept < KEEP_LATEST_ATTACHMENTS;
+        i--
+      ) {
+        if (H[i]?.kind === "attachment") {
+          latestAttachmentIdx.add(i);
+          kept++;
+        }
+      }
+    }
+
+    for (let i = 0; i < H.length; i++) {
+      const m = H[i];
       if (
         m?.role === "user" ||
         m?.role === "assistant" ||
         m?.role === "system"
       ) {
-        const content =
+        let content =
           typeof m.content === "string"
             ? m.content
             : m?.content?.toString?.() ?? "";
+
+        // Truncate only historical attachments (not the latest N)
+        if (
+          m?.kind === "attachment" &&
+          !latestAttachmentIdx.has(i) &&
+          content.length > ATTACH_TRUNC_LIMIT
+        ) {
+          const suffix = "… [truncated historical attachment]";
+          content =
+            content.slice(0, ATTACH_TRUNC_LIMIT - suffix.length) + suffix;
+        }
+
         msgs.push({ role: m.role, content });
       }
     }
 
-    // Keep up to two leading system messages (persona + customInstructions)
-    const sysCount =
-      (msgs[0]?.role === "system" ? 1 : 0) +
-      (msgs[1]?.role === "system" ? 1 : 0);
-    const head = msgs.slice(0, sysCount);
-    const tail = msgs.slice(sysCount).slice(-MAX_TURNS);
-    return [...head, ...tail];
+    return msgs;
   }
 
   async _call(name, params) {

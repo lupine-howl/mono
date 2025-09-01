@@ -1,7 +1,8 @@
 // src/ui/plugin.js
 import { html } from "lit";
-import "@loki/tasks/ui/task-list.js";
-import "@loki/tasks/ui/task-viewer.js";
+import "@loki/self-code-test/ui/task-list.js";
+import "@loki/self-code-test/ui/task-viewer.js";
+import "@loki/self-code-test/ui/colour-grid.js";
 
 export default ({ components }) => {
   components.push({
@@ -17,6 +18,12 @@ export default ({ components }) => {
         label: "📋 Tasks",
         order: 20,
         render: () => html`<task-list></task-list>`,
+      },
+      {
+        id: `tasks:colours`,
+        label: "🎨 Colour Grid",
+        order: 30,
+        render: () => html`<colour-grid></colour-grid>`,
       },
     ],
   });
