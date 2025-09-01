@@ -115,4 +115,9 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/mono/packages/tasks",
     readOnly: false,
   },
+  selfCodeTest: {
+    name: "Self Code Test",
+    path: "/home/loki/dev/mono/packages/self-code-test",
+    readOnly: false,
+  },
 };

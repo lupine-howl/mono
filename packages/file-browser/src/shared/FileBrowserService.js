@@ -4,7 +4,7 @@ import {
   fsList,
   fsRead,
   fsBundle,
-  fsSnapshot,
+  fsReadSnapshot,
   fsWrite,
   fsApply,
   fsMkdir,
@@ -110,7 +110,7 @@ class FileBrowserService extends EventTarget {
   snapshot(opts = {}) {
     if (!this.ws) return Promise.resolve(null);
     const path = opts.path ?? (this.selection?.path || this.cwd || ".");
-    return fsSnapshot({ ws: this.ws, path, ...opts });
+    return fsReadSnapshot({ ws: this.ws, path, ...opts });
   }
   write(path, content) {
     return fsWrite({ ws: this.ws, path, content });

@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import "./file-bundle-bar.js";
-import { fsSnapshot } from "../shared/fsClient.js";
+import { fsReadSnapshot } from "../shared/fsClient.js";
 
 export class FileBundleViewer extends LitElement {
   static styles = css`
@@ -195,7 +195,7 @@ export class FileBundleViewer extends LitElement {
     this._bundle = null;
     this._text = null;
     try {
-      const json = await fsSnapshot({
+      const json = await fsReadSnapshot({
         ws: this.ws,
         path: this.path,
         recursive: this._recursive ? "1" : "0",

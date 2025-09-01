@@ -18,6 +18,7 @@
     "@loki/minihttp": "../../packages/minihttp",
     "@loki/personas": "../../packages/personas",
     "@loki/tasks": "../../packages/tasks",
+    "@loki/self-code-test": "../../packages/self-code-test",
     "lit": "^3.3.1"
   },
   "devDependencies": {
