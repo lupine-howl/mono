@@ -1,0 +1,28 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "npm i && npm run ex:copy && npm run ex:client && npm run ex:server",
+    "ex:copy": "rm -rf dist && mkdir -p dist/public && cp -R src/index.html dist/public/",
+    "ex:client": "esbuild src/app.js --format=esm --platform=browser --packages=external --outdir=dist/public --log-level=info",
+    "ex:server": "esbuild src/server.mjs --format=esm --platform=node --packages=external --outfile=dist/server.mjs",
+    "start": "npm run build && node dist/server.mjs",
+    "dev": "npm run build && node scripts/dev.mjs"
+  },
+  "dependencies": {
+    "@loki/ai-chat": "../../packages/ai-chat",
+    "@loki/ai-image-gen": "../../packages/ai-image-gen",
+    "@loki/ai-projects": "../../packages/ai-projects",
+    "@loki/db": "../../packages/db",
+    "@loki/file-browser": "../../packages/file-browser",
+    "@loki/layout": "../../packages/layout",
+    "@loki/minihttp": "../../packages/minihttp",
+    "@loki/personas": "../../packages/personas",
+    "@loki/tasks": "../../packages/tasks",
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "chokidar": "^4.0.3",
+    "esbuild": "^0.25.9",
+    "ws": "^8.18.3"
+  }
+}

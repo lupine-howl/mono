@@ -1,0 +1,21 @@
+{
+  "name": "@loki/utilities",
+  "version": "0.1.0",
+  "type": "module",
+  "author": "Leo Keith",
+  "license": "MIT",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "npm i && esbuild src/index.js --bundle --format=esm --platform=node --splitting --outdir=dist --log-level=info"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "lit": "^3.3.1",
+    "localforage": "^1.10.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  }
+}

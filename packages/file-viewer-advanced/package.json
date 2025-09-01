@@ -1,0 +1,32 @@
+{
+  "name": "@loki/file-browser",
+  "version": "0.1.4",
+  "exports": {
+    ".": "./dist/services/index.js",
+    "./ui/*": "./dist/ui/*"
+  },
+  "publishConfig": {
+    "registry": "http://localhost:4873"
+  },
+  "type": "module",
+  "author": "Your Name",
+  "license": "MIT",
+  "scripts": {
+    "build:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --splitting --outdir=dist/ui --log-level=info",
+    "dev:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --splitting --outdir=dist/ui --log-level=info --watch",
+    "build:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --splitting --outdir=dist/services --log-level=info",
+    "dev:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --splitting --outdir=dist/services --log-level=info --watch",
+    "build": "npm run build:ui && npm run build:services",
+    "build:dev": "npm run dev:ui && npm run dev:services",
+    "publish:patch": "npm version patch --no-git-tag-version && npm publish",
+    "examples": "npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
+  },
+  "dependencies": {
+    "@loki/minihttp": "../minihttp",
+    "@loki/layout": "../layout",
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  }
+}

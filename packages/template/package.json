@@ -1,0 +1,34 @@
+{
+  "name": "@loki/template",
+  "version": "0.1.0",
+  "type": "module",
+  "author": "Leo Keith",
+  "license": "MIT",
+  "exports": {
+    ".": "./dist/services/index.js",
+    "./ui/*": "./dist/ui/*",
+    "./util": "./dist/shared/index.js"
+  },
+  "scripts": {
+    "build:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --splitting --external:lit --outdir=dist/ui --log-level=info",
+    "build:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --splitting --outdir=dist/services --log-level=info",
+    "build:shared": "esbuild src/shared/index.js --bundle --format=esm --platform=node --splitting --outdir=dist/shared --log-level=info",
+    "dev:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --splitting --external:lit --outdir=dist/ui --log-level=info --watch",
+    "dev:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --splitting --outdir=dist/services --log-level=info --watch",
+    "dev:shared": "esbuild src/shared/index.js --bundle --format=esm --platform=node --splitting --outdir=dist/shared --log-level=info --watch",
+    "build": "npm i && rm -rf dist && npm run build:ui && npm run build:services && npm run build:shared",
+    "build:dev": "npm run dev:ui && npm run dev:services && npm run dev:shared",
+    "publish:patch": "npm version patch --no-git-tag-version && npm publish",
+    "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
+  },
+  "dependencies": {
+    "@loki/minihttp": "file:../minihttp"
+  },
+  "peerDependencies": {
+    "lit": "^3.3.1",
+    "localforage": "^1.10.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  }
+}

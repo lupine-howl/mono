@@ -1,0 +1,49 @@
+{
+  "name": "@loki/tasks",
+  "type": "module",
+  "exports": {
+    ".": "./dist/services/index.js",
+    "./plugin": {
+      "browser": "./dist/plugin/plugin.client.js",
+      "node": "./dist/plugin/plugin.server.mjs",
+      "default": "./dist/plugin/plugin.server.mjs"
+    },
+    "./schemas/*": "./dist/schemas/*",
+    "./ui/*": "./dist/ui/*",
+    "./util": "./dist/shared/index.js"
+  },
+  "scripts": {
+    "build:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --splitting --packages=external --external:lit --outdir=dist/ui --log-level=info",
+    "build:schemas": "esbuild src/schemas/*.js --bundle --format=esm --platform=browser --splitting --packages=external --external:lit --outdir=dist/schemas --log-level=info",
+    "build:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --packages=external --splitting --outdir=dist/services --log-level=info",
+    "build:shared": "esbuild src/shared/index.js --bundle --format=esm --platform=node --packages=external --splitting --outdir=dist/shared --log-level=info",
+    "build:plugin": "rsync -a --delete src/plugin/ dist/plugin/",
+    "dev:plugin": "npm run build:plugin && chokidar 'src/plugin/**' -i '**/.git/**' -c 'rsync -a --delete src/plugin/ dist/plugin/' --initial",
+    "dev:schemas": "esbuild src/schemas/*.js --bundle --format=esm --platform=browser --splitting --packages=external --external:lit --outdir=dist/schemas --log-level=info --watch",
+    "dev:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --packages=external --splitting --external:lit --outdir=dist/ui --log-level=info --watch",
+    "dev:services": "esbuild src/services/index.js --bundle --format=esm --platform=node --packages=external --splitting --outdir=dist/services --log-level=info --watch",
+    "dev:shared": "esbuild src/shared/index.js --bundle --format=esm --platform=node --packages=external --splitting --outdir=dist/shared --log-level=info --watch",
+    "build": "npm i && rm -rf dist && npm run build:ui && npm run build:services && npm run build:shared && npm run build:plugin && npm run build:schemas",
+    "watch": "npm i && npm-run-all -p dev:ui dev:services dev:shared dev:plugin dev:schemas",
+    "publish:patch": "npm version patch --no-git-tag-version && npm publish",
+    "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
+  },
+  "dependencies": {
+    "@loki/ai-chat": "../ai-chat",
+    "@loki/ai-projects": "../ai-projects",
+    "@loki/file-browser": "../file-browser",
+    "@loki/layout": "../layout",
+    "@loki/db": "../db",
+    "@loki/minihttp": "../minihttp",
+    "@loki/tasks": "../tasks",
+    "@loki/utilities": "../utilities"
+  },
+  "peerDependencies": {
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "chokidar-cli": "^3.0.0",
+    "esbuild": "^0.25.9",
+    "npm-run-all": "^4.1.5"
+  }
+}
