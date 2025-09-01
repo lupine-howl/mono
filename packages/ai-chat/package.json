@@ -1,9 +1,6 @@
 {
   "name": "@loki/ai-chat",
   "version": "0.1.0",
-  "publishConfig": {
-    "registry": "http://localhost:4873"
-  },
   "type": "module",
   "author": "Your Name",
   "license": "MIT",
