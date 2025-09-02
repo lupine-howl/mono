@@ -14,6 +14,7 @@
     "@loki/ai-projects": "../../packages/ai-projects",
     "@loki/db": "../../packages/db",
     "@loki/file-browser": "../../packages/file-browser",
+    "@loki/file-viewer-advanced": "../../packages/file-viewer-advanced",
     "@loki/layout": "../../packages/layout",
     "@loki/minihttp": "../../packages/minihttp",
     "@loki/http-base": "../../packages/http-base",

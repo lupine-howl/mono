@@ -4,7 +4,7 @@ import "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
 import "https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js";
 // StackEdit overlay editor (CDN):
 import "https://unpkg.com/stackedit-js@1.0.7/docs/stackedit.min.js";
-import "./file-bundle-bar.js";
+import "@loki/file-browser/file-bundle-bar.js";
 
 export class MdStackedit extends LitElement {
   static styles = css`

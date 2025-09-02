@@ -1,6 +1,6 @@
 // components/json-tree-viewer.js
 import { LitElement, html, css } from "lit";
-import "./file-bundle-bar.js";
+import "@loki/file-browser/ui/file-bundle-bar.js";
 
 // v3.x ESM import via CDN (standalone includes deps like Ajv)
 import {

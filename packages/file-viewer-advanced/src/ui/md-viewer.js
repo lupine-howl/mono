@@ -2,7 +2,7 @@
 import { LitElement, html, css } from "lit";
 import "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
 import "https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js";
-import "./file-bundle-bar.js";
+import "@loki/file-browser/ui/file-bundle-bar.js";
 
 export class MdViewer extends LitElement {
   static styles = css`

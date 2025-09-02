@@ -1,9 +1,16 @@
 {
-  "name": "@loki/file-browser",
+  "name": "@loki/file-viewer-advanced",
   "version": "0.1.4",
   "exports": {
-    ".": "./dist/services/index.js",
-    "./ui/*": "./dist/ui/*"
+    ".": "./src/services/index.js",
+    "./plugin": {
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.mjs",
+      "default": "./src/plugin/plugin.server.mjs"
+    },
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
   },
   "publishConfig": {
     "registry": "http://localhost:4873"
@@ -24,6 +31,7 @@
   "dependencies": {
     "@loki/minihttp": "../minihttp",
     "@loki/layout": "../layout",
+    "@loki/file-browser": "../file-browser",
     "lit": "^3.3.1"
   },
   "devDependencies": {

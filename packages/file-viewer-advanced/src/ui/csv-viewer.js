@@ -1,7 +1,7 @@
 // components/csv-viewer.js
 import { LitElement, html, css } from "lit";
 import "https://cdn.jsdelivr.net/npm/papaparse/papaparse.min.js";
-import "./file-bundle-bar.js";
+import "@loki/file-browser/file-bundle-bar.js";
 
 export class CsvViewer extends LitElement {
   static styles = css`

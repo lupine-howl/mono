@@ -1,6 +1,6 @@
 // components/html-preview.js
 import { LitElement, html, css } from "lit";
-import "./file-bundle-bar.js";
+import "@loki/file-browser/ui/file-bundle-bar.js";
 
 export class HtmlPreview extends LitElement {
   static styles = css`

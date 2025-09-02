@@ -1,6 +1,6 @@
 // components/file-viewer.js
 import { LitElement, html, css } from "lit";
-import "./file-bundle-bar.js";
+import "@loki/file-browser/ui/file-bundle-bar.js";
 
 // CodeMirror via CDN
 import {
