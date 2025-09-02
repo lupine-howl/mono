@@ -4,8 +4,7 @@ import { mountModelsRoute } from "./modelsHandler.js";
 
 /**
  * registerAITools({ router, tools }, opts)
- * - Mounts chat/models/images routes
- * - If `tools` provided, also mounts RPC + OpenAPI *and* adds aiGenerateImage (if missing)
+ * - Mounts chat/models routes
  */
 export function registerAITools(
   { router, tools },
@@ -17,9 +16,10 @@ export function registerAITools(
     apiKey = process.env.OPENAI_API_KEY,
     model = "gpt-4o-mini",
     filterModels = null,
+    baseUrl = "https://api.openai.com/v1",
   } = {}
 ) {
   // Routes
-  mountChatRoute(router, tools, { path: aiPath, apiKey, model });
-  mountModelsRoute(router, { path: modelsPath, apiKey, filter: filterModels });
+  mountChatRoute(router, tools, { path: aiPath, apiKey, model, baseUrl });
+  mountModelsRoute(router, { path: modelsPath, apiKey, filter: filterModels, baseUrl });
 }

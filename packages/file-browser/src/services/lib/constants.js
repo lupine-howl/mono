@@ -105,6 +105,11 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/mono/packages/minihttp",
     readOnly: false,
   },
+  minihttp: {
+    name: "Chat Component",
+    path: "/home/loki/dev/mono/packages/ai-chat",
+    readOnly: false,
+  },
   aiConsole: {
     name: "AI Console",
     path: "/home/loki/dev/mono/packages/ai-console",

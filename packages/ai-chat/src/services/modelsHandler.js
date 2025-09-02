@@ -1,14 +1,21 @@
-import { makeOpenAIClient } from "./client.js";
-
 export function mountModelsRoute(
   router,
   {
     path = "/api/models",
     apiKey = process.env.OPENAI_API_KEY,
     filter = null, // optional (id)=>boolean
+    baseUrl = "https://api.openai.com/v1",
   } = {}
 ) {
-  const client = makeOpenAIClient({ apiKey });
+  async function listModels() {
+    const headers = {
+      "content-type": "application/json",
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+    };
+    const res = await fetch(`${baseUrl}/models`, { headers });
+    const data = await res.json();
+    return { ok: res.ok, status: res.status, data };
+  }
 
   router.get(path, async () => {
     try {
@@ -18,7 +25,7 @@ export function mountModelsRoute(
           json: { models: [], note: "No API key configured" },
         };
       }
-      const { ok, status, data } = await client.listModels();
+      const { ok, status, data } = await listModels();
       if (!ok) {
         return {
           status,

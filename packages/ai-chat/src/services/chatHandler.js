@@ -1,4 +1,3 @@
-import { makeOpenAIClient } from "./client.js";
 import {
   toOpenAIToolsFromRegistry,
   buildMessages,
@@ -16,9 +15,27 @@ export function mountChatRoute(
     path = "/api/ai",
     apiKey = process.env.OPENAI_API_KEY,
     model = "gpt-4o-mini",
+    baseUrl = "https://api.openai.com/v1",
   } = {}
 ) {
-  const client = makeOpenAIClient({ apiKey });
+  async function chatCompletions(payload) {
+    const headers = {
+      "content-type": "application/json",
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+    };
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    logger.info("chat completion response", {
+      ok: res.ok,
+      status: res.status,
+      data,
+    });
+    return { ok: res.ok, status: res.status, data };
+  }
 
   router.post(path, async (args, ctx) => {
     try {
@@ -64,7 +81,7 @@ export function mountChatRoute(
 
       logger.info("chat completion payload", { payload });
 
-      const { ok, status, data } = await client.chatCompletions(payload);
+      const { ok, status, data } = await chatCompletions(payload);
       if (!ok) {
         return {
           status,

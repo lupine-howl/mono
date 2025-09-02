@@ -2,80 +2,189 @@
 import { LitElement, html, css } from "lit";
 import { ToolsController } from "../shared/ToolsController.js";
 
+const slug = (s) =>
+  String(s)
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/gi, "")
+    .toLowerCase();
+
 export class ToolViewer extends LitElement {
   static styles = css`
     :host {
       display: block;
-      padding: 16px;
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       color: #e7e7ea;
     }
-    h2 {
-      margin: 0 0 6px 0;
-      font-size: 18px;
+    .wrap {
+      padding: 12px;
+      background: #0b0b0c;
+      border: 1px solid #1f1f22;
+      border-radius: 12px;
+    }
+
+    /* Header */
+    .head {
+      display: flex;
+      gap: 8px 12px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e7e7ea;
     }
     .desc {
-      opacity: 0.8;
-      margin-bottom: 16px;
+      color: #9aa3b2;
+      margin-top: 2px;
+      max-width: 900px;
     }
-    .form {
-      display: grid;
-      gap: 10px;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    .pills {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
     }
-    label {
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #131317;
+      border: 1px solid #1f1f22;
+      white-space: nowrap;
+    }
+
+    /* Form grid matches context-viewer (labels left, fields right) */
+    .grid {
       display: grid;
-      gap: 6px;
+      grid-template-columns: 180px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+    }
+    .k {
+      color: #9aa3b2;
+      padding-top: 6px; /* aligns with input padding */
+    }
+    .hint {
+      color: #9aa3b2;
       font-size: 12px;
+      margin-top: 4px;
     }
+    .v {
+      color: #e7e7ea;
+      overflow: visible;
+    }
+
+    /* Inputs consistent with context-viewer */
     input,
     textarea,
     select {
       padding: 8px 10px;
-      border-radius: 10px;
-      border: 1px solid #2a2a30;
-      background: #0b0b0c;
-      color: inherit;
+      border-radius: 8px;
+      border: 1px solid #1f1f22;
+      background: #131317;
+      color: #e7e7ea;
       font: inherit;
+      outline: none;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: #2a2a30;
+      box-shadow: 0 0 0 2px #111214;
     }
     textarea {
-      min-height: 92px;
+      min-height: 110px;
+      resize: vertical;
     }
-    .hint {
-      font-size: 12px;
-      opacity: 0.7;
-    }
-    .bar {
+
+    /* Buttons row left-aligned */
+    .row {
       display: flex;
       gap: 8px;
       align-items: center;
-      margin-top: 12px;
       flex-wrap: wrap;
+      margin-top: 12px;
     }
-    .pill {
+    button,
+    .btn-like {
+      background: #0f0f12;
       border: 1px solid #2a2a30;
+      color: #e7e7ea;
       padding: 6px 10px;
-      border-radius: 999px;
-      background: #111214;
-    }
-    .btn {
-      padding: 8px 12px;
-      border-radius: 10px;
-      border: 1px solid #2a2a30;
-      background: #1b1b1f;
-      color: inherit;
+      border-radius: 8px;
       cursor: pointer;
+      font: inherit;
     }
+    button:hover,
+    .btn-like:hover {
+      background: #131317;
+    }
+    .btn-primary {
+      border-color: #3a3a40;
+      background: #1a1a1f;
+    }
+    .btn-primary[disabled] {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    /* Details / code blocks */
+    code,
     pre {
+      background: #131317;
+      border: 1px solid #1f1f22;
+      border-radius: 8px;
+      padding: 8px;
+      display: block;
+      overflow: auto;
+    }
+    details {
       background: #0f0f12;
       border: 1px solid #1f1f22;
-      padding: 12px;
-      border-radius: 10px;
-      overflow: auto;
+      border-radius: 8px;
+      padding: 6px 8px;
+    }
+    details > summary {
+      cursor: pointer;
+      color: #c7d2fe;
+    }
+
+    /* Checkbox/toggles group */
+    .toggles {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+      margin-top: 8px;
+    }
+    .toggle-list {
+      display: grid;
+      gap: 6px;
+    }
+    .checkbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #0f0f12;
+      border: 1px solid #1f1f22;
+      padding: 6px 8px;
+      border-radius: 8px;
+      width: fit-content;
+    }
+    .checkbox input[type="checkbox"] {
+      width: auto;
+      padding: 0;
+      border: 1px solid #2a2a30;
+      background: #131317;
     }
   `;
 
   static properties = {
-    // internal mirrors of controller state
     _tool: { state: true },
     _schema: { state: true },
     _values: { state: true },
@@ -87,11 +196,8 @@ export class ToolViewer extends LitElement {
 
   constructor() {
     super();
-
-    // self-instantiated controller (rebroadcasts service "change" as "tools:change")
     this.controller = new ToolsController();
 
-    // internal state
     this._tool = null;
     this._schema = null;
     this._values = {};
@@ -100,7 +206,6 @@ export class ToolViewer extends LitElement {
     this._result = null;
     this._error = null;
 
-    // reactively mirror controller state
     this._onChange = (e) => {
       const d = e.detail ?? {};
       if ("tool" in d) this._tool = d.tool;
@@ -116,7 +221,6 @@ export class ToolViewer extends LitElement {
     };
     this.controller.addEventListener("tools:change", this._onChange);
 
-    // hydrate immediately / after ready
     const init = () => {
       this._tool = this.controller.tool;
       this._schema = this.controller.schema;
@@ -167,123 +271,198 @@ export class ToolViewer extends LitElement {
     this.controller.setValue(key, val);
   }
 
-  _renderField([k, def]) {
-    const req = (this._schema?.required || []).includes(k);
-    const label = html`<div>
-      ${k}${req ? " *" : ""}${def?.description
-        ? html`<div class="hint">${def.description}</div>`
-        : ""}
-    </div>`;
+  _fieldRow([k, def]) {
+    const id = `f-${slug(k)}`;
     const v = this._values?.[k];
+    const req = (this._schema?.required || []).includes(k);
 
+    // LEFT: label (key + hint)
+    const label = html`
+      <label class="k" for=${id}>
+        ${k}${req ? " *" : ""}
+        ${def?.description
+          ? html`<div class="hint">${def.description}</div>`
+          : ""}
+      </label>
+    `;
+
+    // RIGHT: control
     if (def?.enum) {
-      return html`<label>
+      return html`
         ${label}
-        <select .value=${v ?? ""} @change=${(e) => this._updateField(k, e)}>
-          ${def.enum.map((opt) => html`<option value=${opt}>${opt}</option>`)}
-        </select>
-      </label>`;
-    }
-    switch (def?.type) {
-      case "boolean":
-        return html`<label>
-          ${label}
-          <input
-            type="checkbox"
-            .checked=${!!v}
+        <div class="v">
+          <select
+            id=${id}
+            .value=${v ?? ""}
             @change=${(e) => this._updateField(k, e)}
-          />
-        </label>`;
+          >
+            ${def.enum.map((opt) => html`<option value=${opt}>${opt}</option>`)}
+          </select>
+        </div>
+      `;
+    }
+
+    switch (def?.type) {
       case "number":
       case "integer":
-        return html`<label>
+        return html`
           ${label}
-          <input
-            type="number"
-            .value=${v ?? ""}
-            @input=${(e) => this._updateField(k, e)}
-          />
-        </label>`;
+          <div class="v">
+            <input
+              id=${id}
+              type="number"
+              .value=${v ?? ""}
+              @input=${(e) => this._updateField(k, e)}
+            />
+          </div>
+        `;
       case "array":
       case "object":
-        return html`<label>
+        return html`
           ${label}
-          <textarea
-            .value=${typeof v === "string"
-              ? v
-              : v
-              ? JSON.stringify(v, null, 2)
-              : ""}
-            @input=${(e) => this._updateField(k, e)}
-          ></textarea>
-        </label>`;
+          <div class="v">
+            <textarea
+              id=${id}
+              .value=${typeof v === "string"
+                ? v
+                : v
+                ? JSON.stringify(v, null, 2)
+                : ""}
+              @input=${(e) => this._updateField(k, e)}
+            ></textarea>
+          </div>
+        `;
+      case "boolean":
+        // Handled in Toggles group
+        return null;
       default:
-        return html`<label>
+        return html`
           ${label}
-          <input .value=${v ?? ""} @input=${(e) => this._updateField(k, e)} />
-        </label>`;
+          <div class="v">
+            <input
+              id=${id}
+              .value=${v ?? ""}
+              @input=${(e) => this._updateField(k, e)}
+            />
+          </div>
+        `;
     }
+  }
+
+  _checkboxRow([k, def]) {
+    const id = `f-${slug(k)}`;
+    const v = !!this._values?.[k];
+    const req = (this._schema?.required || []).includes(k);
+
+    return html`
+      <label class="checkbox">
+        <input
+          id=${id}
+          type="checkbox"
+          .checked=${v}
+          @change=${(e) => this._updateField(k, e)}
+        />
+        <span>${k}${req ? " *" : ""}</span>
+      </label>
+      ${def?.description
+        ? html`<div class="hint" style="grid-column: 2 / -1;">
+            ${def.description}
+          </div>`
+        : null}
+    `;
   }
 
   render() {
     const t = this._tool;
+    const ready = !this._missingRequired.length;
+
+    // Partition fields into non-boolean and boolean (toggles)
+    const entries = Object.entries(this._schema?.properties || {});
+    const fields = entries.filter(([, d]) => d?.type !== "boolean");
+    const toggles = entries.filter(([, d]) => d?.type === "boolean");
+
     return html`
-      ${t
-        ? html`
-            <h2>${t.name}</h2>
-            ${t.description
+      <div class="wrap">
+        <div class="head">
+          <div>
+            <div class="title">${t ? t.name : "No tool selected"}</div>
+            ${t?.description
               ? html`<div class="desc">${t.description}</div>`
-              : ""}
-          `
-        : html`<div class="hint">Select a tool to begin.</div>`}
-      ${this._schema
-        ? html`
-            <div class="form">
-              ${Object.entries(this._schema.properties || {}).map((entry) =>
-                this._renderField(entry)
-              )}
-            </div>
+              : null}
+          </div>
+          <div class="pills">
+            <span class="pill">method: ${this._method}</span>
+            <span class="pill">calling: ${!!this._calling}</span>
+            <span class="pill"
+              >${ready
+                ? "ready"
+                : `missing: ${this._missingRequired.join(", ")}`}</span
+            >
+          </div>
+        </div>
 
-            <div class="bar">
-              ${this._missingRequired.length
-                ? html`<span class="pill"
-                    >Missing: ${this._missingRequired.join(", ")}</span
-                  >`
-                : html`<span class="pill">Ready</span>`}
+        ${this._schema
+          ? html`
+              <!-- Non-boolean fields in two-column grid -->
+              <div class="grid">${fields.map((e) => this._fieldRow(e))}</div>
 
-              <button
-                class="btn"
-                @click=${() => this.controller.call()}
-                ?disabled=${this._calling || !t}
-              >
-                ${this._calling ? "Calling…" : "Call tool"}
-              </button>
+              <!-- Toggles group at the end if any -->
+              ${toggles.length
+                ? html`
+                    <div class="toggles">
+                      <div class="k">Toggles</div>
+                      <div class="v toggle-list">
+                        ${toggles.map((e) => this._checkboxRow(e))}
+                      </div>
+                    </div>
+                  `
+                : null}
 
-              <select
-                @change=${(e) => this.controller.setMethod(e.target.value)}
-                .value=${this._method}
-                title="HTTP method"
-              >
-                <option>POST</option>
-                <option>GET</option>
-              </select>
-              <span class="hint">Method</span>
-            </div>
+              <!-- Actions (left-aligned) -->
+              <div class="row">
+                <button
+                  class="btn-primary"
+                  @click=${() => this.controller.call()}
+                  ?disabled=${this._calling || !t}
+                  title="Execute the tool with current parameters"
+                >
+                  ${this._calling ? "Calling…" : "Call tool"}
+                </button>
 
-            ${this._result != null || this._error
-              ? html` <div style="margin-top:12px">
-                  <div class="hint">Result</div>
-                  <pre>
-${JSON.stringify(
-                      this._error ? { error: this._error } : this._result,
-                      null,
-                      2
-                    )}</pre
+                <label
+                  class="k"
+                  style="display:flex;align-items:center;gap:6px;"
+                >
+                  Method
+                  <select
+                    class="btn-like"
+                    @change=${(e) => this.controller.setMethod(e.target.value)}
+                    .value=${this._method}
+                    title="HTTP method"
                   >
-                </div>`
-              : ""}
-          `
-        : ""}
+                    <option>POST</option>
+                    <option>GET</option>
+                  </select>
+                </label>
+              </div>
+
+              ${this._result != null || this._error
+                ? html`
+                    <details open style="margin-top:12px;">
+                      <summary>Result ${this._error ? "(error)" : ""}</summary>
+                      <pre>
+${JSON.stringify(
+                          this._error ? { error: this._error } : this._result,
+                          null,
+                          2
+                        )}</pre
+                      >
+                    </details>
+                  `
+                : null}
+            `
+          : html`<div class="desc">Select a tool to begin.</div>`}
+      </div>
     `;
   }
 }

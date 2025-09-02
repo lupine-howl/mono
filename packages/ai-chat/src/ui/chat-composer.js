@@ -10,6 +10,7 @@ export class ChatComposer extends LitElement {
       margin-bottom: 10px;
       border-radius: 28px;
       height: auto;
+      padding-top: 17px;
     }
     .button-wrap {
       position: relative;
@@ -29,22 +30,45 @@ export class ChatComposer extends LitElement {
       line-height: 1.4;
       border: none;
       outline: none;
-      overflow-y: hidden;
+      overflow-y: auto;
       min-height: 0;
       max-height: 200px;
       padding: 17px;
       padding-bottom: 0;
+      padding-top: 0;
       padding-left: 14px;
-      width: 90%;
+      width: 93%;
+      /* WebKit (Chrome, Edge, Safari) */
+      scrollbar-width: thin; /* Firefox */
+      scrollbar-color: #aaa transparent; /* Firefox */
+
+      /* Chrome/Edge/Safari */
+    }
+    textarea::-webkit-scrollbar {
+      width: 6px;
+    }
+    textarea::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    textarea::-webkit-scrollbar-thumb {
+      background-color: rgba(0, 0, 0, 0.25);
+      border-radius: 3px;
+    }
+    textarea::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(0, 0, 0, 0.4);
     }
     :host(:not([multiline])) .wrap {
       height: 58px;
+      padding-top: 0;
     }
     :host(:not([multiline])) .button-wrap {
       bottom: 52px;
     }
     :host(:not([multiline])) form {
       left: 30px;
+    }
+    :host(:not([multiline])) textarea {
+      padding-top: 17px;
     }
   `;
   static properties = {
