@@ -9,7 +9,8 @@ export class TaskList extends LitElement {
       display: block;
     }
     .bar {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr minmax(140px, 0.6fr) minmax(140px, 0.6fr) auto;
       gap: 8px;
       align-items: center;
       margin-bottom: 8px;
@@ -54,10 +55,16 @@ export class TaskList extends LitElement {
       opacity: 0.6;
       text-decoration: line-through;
     }
+    .meta {
+      font-size: 12px;
+      opacity: 0.7;
+    }
   `;
 
   static properties = {
     _draftTitle: { state: true },
+    _draftWorkspaceId: { state: true },
+    _draftToolId: { state: true },
   };
 
   constructor() {
@@ -65,13 +72,21 @@ export class TaskList extends LitElement {
     // Per-host controller; it wires itself to this element & re-renders on changes
     this.tasks = new TaskController(this);
     this._draftTitle = "";
+    this._draftWorkspaceId = "";
+    this._draftToolId = "";
   }
 
   #add = () => {
     const title = (this._draftTitle || "").trim();
     if (!title) return;
-    this.tasks.add({ title });
+    this.tasks.add({
+      title,
+      workspaceId: (this._draftWorkspaceId || "").trim(),
+      toolId: (this._draftToolId || "").trim(),
+    });
     this._draftTitle = "";
+    this._draftWorkspaceId = "";
+    this._draftToolId = "";
   };
 
   render() {
@@ -90,6 +105,16 @@ export class TaskList extends LitElement {
           placeholder="New task title…"
           .value=${this._draftTitle}
           @input=${(e) => (this._draftTitle = e.target.value)}
+        />
+        <input
+          placeholder="Workspace ID"
+          .value=${this._draftWorkspaceId}
+          @input=${(e) => (this._draftWorkspaceId = e.target.value)}
+        />
+        <input
+          placeholder="Tool ID"
+          .value=${this._draftToolId}
+          @input=${(e) => (this._draftToolId = e.target.value)}
         />
         <button type="submit" ?disabled=${!(this._draftTitle || "").trim()}>
           Add
@@ -113,6 +138,10 @@ export class TaskList extends LitElement {
               />
               <div class="title ${t?.done ? "done" : ""}">
                 ${t?.title ?? ""}
+                <div class="meta">
+                  ${t?.workspaceId ? `ws:${t.workspaceId}` : ""}
+                  ${t?.toolId ? ` · tool:${t.toolId}` : ""}
+                </div>
               </div>
               <button
                 @click=${(e) => {

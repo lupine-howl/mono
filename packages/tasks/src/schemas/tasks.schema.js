@@ -7,6 +7,8 @@ export const tasksSchema = {
     notes: { type: "string" },
     done: { type: "boolean" },
     due: { type: "string" }, // ISO date string
+    workspaceId: { type: "string" },
+    toolId: { type: "string" },
     createdAt: { type: "integer" }, // millis
     updatedAt: { type: "integer" }, // millis
     orderIndex: { type: "integer" },

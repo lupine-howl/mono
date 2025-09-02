@@ -122,6 +122,22 @@ export class TaskViewer extends LitElement {
               </label>
 
               <label
+                >Workspace ID
+                <input
+                  .value=${t.workspaceId ?? ""}
+                  @input=${(e) => this.#patch({ workspaceId: e.target.value })}
+                />
+              </label>
+
+              <label
+                >Tool ID
+                <input
+                  .value=${t.toolId ?? ""}
+                  @input=${(e) => this.#patch({ toolId: e.target.value })}
+                />
+              </label>
+
+              <label
                 >Due date
                 <input
                   type="date"

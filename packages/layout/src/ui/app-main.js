@@ -26,7 +26,6 @@ export class AppMain extends LitElement {
     }
     .composer {
       flex: 0 0 auto; /* sticks to bottom */
-      background: var(--bg);
       position: fixed;
       bottom: 0;
       width: 800px;

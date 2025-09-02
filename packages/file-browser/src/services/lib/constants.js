@@ -135,4 +135,9 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/fmc/web",
     readOnly: false,
   },
+  fmcApi: {
+    name: "FMC API",
+    path: "/home/loki/dev/fmc/api",
+    readOnly: false,
+  },
 };

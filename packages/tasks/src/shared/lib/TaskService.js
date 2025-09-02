@@ -155,6 +155,8 @@ export class TaskService {
           done: false,
           notes: "",
           due: null,
+          workspaceId: "",
+          toolId: "",
           createdAt: now,
           updatedAt: now,
         };
@@ -177,6 +179,8 @@ export class TaskService {
       done: !!partial.done,
       notes: partial.notes ?? "",
       due: partial.due ?? null,
+      workspaceId: partial.workspaceId ?? "",
+      toolId: partial.toolId ?? "",
       createdAt: now,
       updatedAt: now,
     };
