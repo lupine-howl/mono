@@ -1,6 +1,7 @@
 // src/ui/chat-cards/chat-tool-request.js
 import { LitElement, html, css } from "lit";
 import { parseMaybeJSON } from "./render-utils.js";
+import "@loki/minihttp/ui/tool-viewer.js";
 
 export class ChatToolRequest extends LitElement {
   static styles = css`
@@ -88,7 +89,8 @@ export class ChatToolRequest extends LitElement {
           <button class="btn primary" @click=${this._run}>Run</button>
           <button class="btn" @click=${this._cancel}>Cancel</button>
         </div>
-        <pre>${JSON.stringify(args, null, 2)}</pre>
+        <tool-viewer static tool=${name} .args=${args}></tool-viewer>
+        <!--<pre>${JSON.stringify(args, null, 2)}</pre>-->
       </div>
     `;
   }

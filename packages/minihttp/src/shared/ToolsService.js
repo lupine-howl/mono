@@ -1,4 +1,6 @@
-// src/services/MiniHttpService.js
+// src/shared/ToolsService.js
+// (drop-in replacement)
+
 import { getGlobalSingleton } from "@loki/utilities";
 import { createOpenApiRpcClient } from "./createOpenApiRpcClient.js";
 
@@ -10,13 +12,19 @@ const isBrowser = () =>
  * { type, base, src, openapiUrl, method, tools, toolName, tool, schema, values,
  *   loadingTools, calling, result, error }
  */
-class ToolsService extends EventTarget {
+export class ToolsService extends EventTarget {
   constructor({
     storageKey = "minihttp.selectedTool",
     base = isBrowser() ? location.origin : "http://localhost:3000",
     src = "/rpc",
     openapiUrl = "/openapi.json",
     method = "POST",
+
+    // NEW: initial selection to seed forms for scoped/embedded viewers
+    initialTool = "",
+    initialArgs = null,
+    initialMethod = null, // "GET" | "POST"
+    preferInitial = true, // if true, initialTool wins over localStorage on first load
   } = {}) {
     super();
     this.storageKey = storageKey;
@@ -39,6 +47,15 @@ class ToolsService extends EventTarget {
 
     this._rpc = null;
     this._ready = null;
+
+    // NEW: remember initial selection
+    this._init = {
+      tool: initialTool || "",
+      args: initialArgs,
+      method: initialMethod ? String(initialMethod).toUpperCase() : null,
+      prefer: !!preferInitial,
+      applied: false,
+    };
   }
 
   // -------- public state helpers --------
@@ -68,9 +85,12 @@ class ToolsService extends EventTarget {
   // -------- lifecycle / hydrate --------
   async sync() {
     if (!this._ready) {
-      const preferred = isBrowser()
+      const lsPreferred = isBrowser()
         ? localStorage.getItem(this.storageKey) || ""
         : "";
+      const preferred =
+        this._init.prefer && this._init.tool ? this._init.tool : lsPreferred;
+
       this._ready = this.refreshTools({ preferred })
         .then(() => {
           this._emit("init");
@@ -117,6 +137,14 @@ class ToolsService extends EventTarget {
       const exists = preferred && this.tools.some((t) => t.name === preferred);
       const next = exists ? preferred : this.tools[0]?.name || "";
       await this.setTool(next, { fromRefresh: true });
+
+      // Apply initial method/args once (after schema/defaults exist)
+      if (!this._init.applied) {
+        if (this._init.method) this.setMethod(this._init.method);
+        if (this._init.args && next) this.setValues(this._init.args);
+        this._init.applied = true;
+      }
+
       this._emit("tools");
     } catch (e) {
       this.error = e?.message || String(e);
@@ -284,6 +312,31 @@ class ToolsService extends EventTarget {
     } finally {
       this.calling = false;
       this._emit("call:done");
+    }
+  }
+
+  // NEW: set/refresh the initial selection at runtime (e.g., when attributes change)
+  setInitialSelection({ tool, args, method, prefer = true } = {}) {
+    this._init = {
+      tool: tool || "",
+      args: args ?? null,
+      method: method ? String(method).toUpperCase() : null,
+      prefer: !!prefer,
+      applied: false,
+    };
+    // If tools are already loaded, apply immediately
+    if (this.tools?.length) {
+      const exists =
+        this._init.tool && this.tools.some((t) => t.name === this._init.tool);
+      const next = exists
+        ? this._init.tool
+        : this.toolName || this.tools[0]?.name || "";
+      if (next && next !== this.toolName) {
+        this.setTool(next);
+      }
+      if (this._init.method) this.setMethod(this._init.method);
+      if (this._init.args) this.setValues(this._init.args);
+      this._init.applied = true;
     }
   }
 }

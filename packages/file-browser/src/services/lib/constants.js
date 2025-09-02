@@ -105,7 +105,7 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/mono/packages/minihttp",
     readOnly: false,
   },
-  minihttp: {
+  chat: {
     name: "Chat Component",
     path: "/home/loki/dev/mono/packages/ai-chat",
     readOnly: false,
@@ -123,6 +123,11 @@ export const DEFAULT_WORKSPACES = {
   selfCodeTest: {
     name: "Self Code Test",
     path: "/home/loki/dev/mono/packages/self-code-test",
+    readOnly: false,
+  },
+  fmcWeb: {
+    name: "FMC Web",
+    path: "/home/loki/dev/fmc/web",
     readOnly: false,
   },
 };

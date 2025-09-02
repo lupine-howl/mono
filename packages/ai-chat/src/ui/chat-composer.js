@@ -33,7 +33,6 @@ export class ChatComposer extends LitElement {
       overflow-y: auto;
       min-height: 0;
       max-height: 200px;
-      padding: 17px;
       padding-bottom: 0;
       padding-top: 0;
       padding-left: 14px;
@@ -62,13 +61,11 @@ export class ChatComposer extends LitElement {
       padding-top: 0;
     }
     :host(:not([multiline])) .button-wrap {
-      bottom: 52px;
+      bottom: 18px;
     }
     :host(:not([multiline])) form {
       left: 30px;
-    }
-    :host(:not([multiline])) textarea {
-      padding-top: 17px;
+      top: 17px;
     }
   `;
   static properties = {
@@ -130,6 +127,7 @@ export class ChatComposer extends LitElement {
             autocapitalize="off"
             spellcheck="false"
             ?disabled=${isBusy}
+            @paste=${this.onPaste}
             @input=${this.autoResize}
             @keydown=${this.onKeydown}
           ></textarea>
@@ -176,6 +174,20 @@ export class ChatComposer extends LitElement {
       ta.setSelectionRange(end, end);
     } catch {}
   }
+
+  // Keep caret after pasted text; minimal & lets browser insert normally
+  onPaste = (e) => {
+    const ta = e.target;
+    const start = ta.selectionStart ?? ta.value.length;
+    const pasted = e.clipboardData?.getData("text") ?? "";
+    requestAnimationFrame(() => {
+      const pos = start + pasted.length;
+      try {
+        ta.setSelectionRange(pos, pos);
+      } catch {}
+      this.autoResize({ target: ta });
+    });
+  };
 
   autoResize = (e) => {
     const ta = e.target;

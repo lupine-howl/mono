@@ -1,6 +1,9 @@
 // src/ui/tool-viewer.js
+// (drop-in replacement)
+
 import { LitElement, html, css } from "lit";
 import { ToolsController } from "../shared/ToolsController.js";
+import { ToolsService } from "../shared/ToolsService.js";
 
 const slug = (s) =>
   String(s)
@@ -56,7 +59,7 @@ export class ToolViewer extends LitElement {
       white-space: nowrap;
     }
 
-    /* Form grid matches context-viewer (labels left, fields right) */
+    /* Form grid */
     .grid {
       display: grid;
       grid-template-columns: 180px 1fr;
@@ -77,7 +80,7 @@ export class ToolViewer extends LitElement {
       overflow: visible;
     }
 
-    /* Inputs consistent with context-viewer */
+    /* Inputs */
     input,
     textarea,
     select {
@@ -102,7 +105,7 @@ export class ToolViewer extends LitElement {
       resize: vertical;
     }
 
-    /* Buttons row left-aligned */
+    /* Buttons row */
     .row {
       display: flex;
       gap: 8px;
@@ -185,6 +188,29 @@ export class ToolViewer extends LitElement {
   `;
 
   static properties = {
+    // Optional endpoint overrides (rarely needed)
+    static: { type: Boolean, reflect: true },
+    base: { type: String },
+    src: { type: String },
+    openapiUrl: { type: String },
+
+    // Initialize with a tool + args + method
+    tool: { type: String },
+    args: {
+      attribute: "args",
+      converter: {
+        fromAttribute(v) {
+          if (v == null) return null;
+          try {
+            return JSON.parse(v);
+          } catch {
+            return v;
+          }
+        },
+      },
+    },
+    method: { type: String },
+
     _tool: { state: true },
     _schema: { state: true },
     _values: { state: true },
@@ -196,7 +222,21 @@ export class ToolViewer extends LitElement {
 
   constructor() {
     super();
-    this.controller = new ToolsController();
+
+    const isScoped = this.hasAttribute("static");
+    const svc = isScoped
+      ? new ToolsService({
+          base: this.base || undefined,
+          src: this.src || "/rpc",
+          openapiUrl: this.openapiUrl || "/openapi.json",
+          initialTool: this.tool || "",
+          initialArgs: this.args || null,
+          initialMethod: this.method || null,
+          preferInitial: true,
+        })
+      : undefined;
+
+    this.controller = new ToolsController({ service: svc });
 
     this._tool = null;
     this._schema = null;
@@ -231,12 +271,34 @@ export class ToolViewer extends LitElement {
       this._error = this.controller.error;
       this.requestUpdate();
     };
+
     if (this.controller.tools?.length) init();
     else
       this.controller
         .ready?.()
         .then(init)
         .catch(() => {});
+  }
+
+  // Keep private service in sync if attributes change after construction
+  updated(changed) {
+    if (!this.static) return;
+    if (changed.has("tool") || changed.has("args") || changed.has("method")) {
+      this.controller?.svc?.setInitialSelection?.({
+        tool: this.tool,
+        args: this.args,
+        method: this.method,
+        prefer: true,
+      });
+    }
+    if (
+      changed.has("base") ||
+      changed.has("src") ||
+      changed.has("openapiUrl")
+    ) {
+      // If you need to reactively rebuild the service when endpoints change,
+      // you could do it here. Often not necessary in chat usage.
+    }
   }
 
   get _missingRequired() {
@@ -276,7 +338,6 @@ export class ToolViewer extends LitElement {
     const v = this._values?.[k];
     const req = (this._schema?.required || []).includes(k);
 
-    // LEFT: label (key + hint)
     const label = html`
       <label class="k" for=${id}>
         ${k}${req ? " *" : ""}
@@ -286,7 +347,6 @@ export class ToolViewer extends LitElement {
       </label>
     `;
 
-    // RIGHT: control
     if (def?.enum) {
       return html`
         ${label}
@@ -333,8 +393,7 @@ export class ToolViewer extends LitElement {
           </div>
         `;
       case "boolean":
-        // Handled in Toggles group
-        return null;
+        return null; // handled in Toggles
       default:
         return html`
           ${label}
