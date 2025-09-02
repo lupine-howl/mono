@@ -2,9 +2,15 @@
   "name": "@loki/layout",
   "version": "0.1.0",
   "exports": {
-    ".": "./dist/services/index.js",
-    "./util": "./dist/shared/index.js",
-    "./ui/*": "./dist/ui/*"
+    ".": "./src/services/index.js",
+    "./plugin": {
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.mjs",
+      "default": "./src/plugin/plugin.server.mjs"
+    },
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
   },
   "publishConfig": {
     "registry": "http://localhost:4873"

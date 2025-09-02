@@ -1,4 +1,4 @@
-import { createToolRegistry } from "./toolRegistry";
+import { createToolRegistry } from "./toolRegistry.js";
 import { MiniHttpServer } from "@loki/http-base";
 
 export class ToolingHttpServer extends MiniHttpServer {

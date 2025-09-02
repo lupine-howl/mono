@@ -5,9 +5,15 @@
   "author": "Leo Keith",
   "license": "MIT",
   "exports": {
-    ".": "./dist/services/index.js",
-    "./ui/*": "./dist/ui/*",
-    "./util": "./dist/shared/index.js"
+    ".": "./src/services/index.js",
+    "./plugin": {
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.mjs",
+      "default": "./src/plugin/plugin.server.mjs"
+    },
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
   },
   "scripts": {
     "build:ui": "esbuild src/ui/*.js --bundle --format=esm --platform=browser --splitting --external:lit --outdir=dist/ui --log-level=info",

@@ -2,15 +2,15 @@
   "name": "@loki/self-code-test",
   "type": "module",
   "exports": {
-    ".": "./dist/services/index.js",
+    ".": "./src/services/index.js",
     "./plugin": {
-      "browser": "./dist/plugin/plugin.client.js",
-      "node": "./dist/plugin/plugin.server.mjs",
-      "default": "./dist/plugin/plugin.server.mjs"
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.mjs",
+      "default": "./src/plugin/plugin.server.mjs"
     },
-    "./schemas/*": "./dist/schemas/*",
-    "./ui/*": "./dist/ui/*",
-    "./util": "./dist/shared/index.js"
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
   },
   "scripts": {
     "build:ui": "esbuild src/ui/*.js                 --outdir=dist/ui       --bundle --format=esm --platform=browser --packages=external --log-level=info",

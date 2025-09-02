@@ -5,15 +5,15 @@
   "author": "Your Name",
   "license": "MIT",
   "exports": {
-    ".": "./dist/services/index.js",
+    ".": "./src/services/index.js",
     "./plugin": {
-      "browser": "./dist/plugin/plugin.client.js",
-      "node": "./dist/plugin/plugin.server.js",
-      "default": "./dist/plugin/plugin.server.js"
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.js",
+      "default": "./src/plugin/plugin.server.js"
     },
-    "./schemas/*": "./dist/schemas/*",
-    "./ui/*": "./dist/ui/*",
-    "./util": "./dist/shared/index.js"
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
   },
   "scripts": {
     "build:ui": "esbuild src/ui/*.js                 --outdir=dist/ui       --bundle --format=esm --platform=browser --packages=external --log-level=info",
@@ -31,17 +31,11 @@
     "publish:patch": "npm version patch --no-git-tag-version && npm publish",
     "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
   },
-  "dependencies": {
-    "@loki/ai-chat": "../ai-chat",
-    "@loki/ai-projects": "../ai-projects",
-    "@loki/file-browser": "../file-browser",
+  "peerDependencies": {
     "@loki/layout": "../layout",
     "@loki/http-base": "../http-base",
     "@loki/minihttp": "../minihttp",
-    "@loki/tasks": "../tasks",
-    "@loki/utilities": "../utilities"
-  },
-  "peerDependencies": {
+    "@loki/utilities": "../utilities",
     "lit": "^3.3.1"
   },
   "devDependencies": {

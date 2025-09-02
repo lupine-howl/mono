@@ -1,4 +1,4 @@
-import { readJSON, sendJSON } from "./utils";
+import { readJSON, sendJSON } from "./utils.js";
 import { Readable } from "node:stream";
 
 export class Router {

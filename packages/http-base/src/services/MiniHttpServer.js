@@ -1,9 +1,9 @@
-import { Router } from "./Router";
+import { Router } from "./Router.js";
 import http from "node:http";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { contentTypeFor } from "./utils";
-import { health, logEntry, getLogs } from "./utils";
+import { contentTypeFor } from "./utils.js";
+import { health, logEntry, getLogs } from "./utils.js";
 
 function htmlEscape(s = "") {
   return s.replace(

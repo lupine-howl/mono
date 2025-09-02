@@ -5,7 +5,7 @@
   "author": "Leo Keith",
   "license": "MIT",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./src/index.js"
   },
   "scripts": {
     "build": "npm i && esbuild src/index.js --bundle --format=esm --platform=node --splitting --outdir=dist --log-level=info"

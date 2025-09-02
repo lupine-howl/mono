@@ -8,14 +8,15 @@
   "author": "Leo Keith",
   "license": "MIT",
   "exports": {
-    ".": "./dist/services/index.js",
+    ".": "./src/services/index.js",
     "./plugin": {
-      "browser": "./dist/plugin/plugin.client.js",
-      "node": "./dist/plugin/plugin.server.js",
-      "default": "./dist/plugin/plugin.server.js"
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.mjs",
+      "default": "./src/plugin/plugin.server.mjs"
     },
-    "./ui/*": "./dist/ui/*",
-    "./util": "./dist/shared/index.js"
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
   },
   "scripts": {
     "build:ui": "esbuild src/ui/*.js                 --outdir=dist/ui       --sourcemap --bundle --format=esm --platform=browser --packages=external --log-level=info",
@@ -39,7 +40,6 @@
     "@loki/utilities": "../utilities",
     "@loki/tasks": "../tasks",
     "@loki/http-base": "../http-base",
-    "@loki/ai-chat": "../ai-chat",
     "@loki/ai-projects": "../ai-projects"
   },
   "peerDependencies": {

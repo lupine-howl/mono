@@ -16,7 +16,9 @@
     "@loki/file-browser": "../../packages/file-browser",
     "@loki/layout": "../../packages/layout",
     "@loki/minihttp": "../../packages/minihttp",
+    "@loki/http-base": "../../packages/http-base",
     "@loki/personas": "../../packages/personas",
+    "@loki/utilities": "../../packages/utilities",
     "@loki/tasks": "../../packages/tasks",
     "@loki/self-code-test": "../../packages/self-code-test",
     "lit": "^3.3.1"
