@@ -173,7 +173,7 @@ export class ChatStream extends LitElement {
     if (kind === "tool_result" || m.role === "tool") {
       return html`<chat-tool-result .message=${m}></chat-tool-result>`;
     }
-    return html`<chat-message .message=${m}></chat-message>`;
+    return html`<chat-message truncate .role=${m.role} .plaintext=${m.role==="user"}>${m.content}</chat-message>`;
   }
 
   render() {

@@ -7,14 +7,7 @@ import "@loki/file-browser/ui/file-browser.js";
 export default ({ components }) => {
   const ns = "file";
   components.push({
-    body: [
-      {
-        id: `${ns}:viewer`,
-        label: "📄 File",
-        order: 30,
-        render: () => html`<file-viewer></file-viewer>`,
-      },
-    ],
+    body: [],
     sidebar: [
       {
         id: `${ns}:workspace-select`,

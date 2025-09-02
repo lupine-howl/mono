@@ -9,13 +9,13 @@ export default ({ components }) => {
       {
         id: `tasks:viewer`,
         label: "📝 Task",
-        order: 10,
+        order: 20,
         render: () => html`<task-viewer></task-viewer>`,
       },
       {
         id: `tasks:list`,
         label: "📋 Tasks",
-        order: 20,
+        order: 10,
         render: () => html`<task-list></task-list>`,
       },
     ],

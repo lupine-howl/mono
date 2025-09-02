@@ -1,6 +1,8 @@
 // src/ui/file-tree.js
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "../shared/FileBrowserController.js"; // controller autowires the singleton service
+import { TabController } from "@loki/layout/util";
+
 
 // very small icon set (UTF)
 const I = {
@@ -122,7 +124,8 @@ export class FileTree extends LitElement {
 
     // self-instantiate controller; it autowires the singleton service
     this.controller = new FileBrowserController({ eventName: "files:change" });
-
+    this.tabController = new TabController();
+    
     // derived/working state
     this._ws = "";
     this._cwd = ".";
@@ -285,6 +288,7 @@ export class FileTree extends LitElement {
     this._selectedType = item.type;
     this.requestUpdate();
     this.controller.select(abs, item.type);
+    this.tabController.setActive("code");
   }
 
   async _onToggleCaret(e, abs, item) {

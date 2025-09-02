@@ -15,7 +15,7 @@ export default ({ components }) => {
       {
         id: `${ns}:chat`,
         label: "💬 Chat",
-        order: 10,
+        order: 1,
         render: () => html`<chat-stream></chat-stream> `,
       },
       {

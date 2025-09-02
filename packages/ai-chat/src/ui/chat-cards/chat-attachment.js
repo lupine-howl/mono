@@ -5,11 +5,12 @@ import { parseMaybeJSON, fileMeta, trunc } from "./render-utils.js";
 export class ChatAttachment extends LitElement {
   static styles = css`
     .card {
-      border: 1px solid #1f1f22;
-      background: #0f0f12;
-      border-radius: 12px;
-      padding: 10px 12px;
+      //border: 1px solid #1f1f22;
+      //background: #0f0f12;
+      //border-radius: 12px;
+      //padding: 10px 12px;
       width: fit-content;
+      min-width:200px;
       max-width: 600px;
       display: grid;
       gap: 6px;
@@ -87,13 +88,14 @@ export class ChatAttachment extends LitElement {
             <div class="title">${file}</div>
             <div class="muted">${lang || "Attachment"}</div>
           </div>
-          <div class="spacer"></div>
-          <button class="btn" @click=${this._remove}>×</button>
+          <!--<div class="spacer"></div>
+          <button class="btn" @click=${this._remove}>×</button>-->
         </div>
+        <!--
         ${path ? html`<div class="muted">${path}</div>` : ""}
         ${text
           ? html`<pre>${text.length > 800 ? trunc(text, 800) : text}</pre>`
-          : ""}
+          : ""}-->
       </div>
     `;
   }

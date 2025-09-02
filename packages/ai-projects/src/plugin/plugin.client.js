@@ -11,7 +11,7 @@ export default ({ components }) => {
       {
         id: `${ns}:projects`,
         label: "Projects",
-        order: 1,
+        order: 2,
         render: () => html`<project-list></project-list>`,
       },
       {
@@ -25,7 +25,7 @@ export default ({ components }) => {
       {
         id: `${ns}:project`,
         label: "📁 Project",
-        order: 15,
+        order: 2,
         render: () => html`<project-viewer></project-viewer>`,
       },
     ],

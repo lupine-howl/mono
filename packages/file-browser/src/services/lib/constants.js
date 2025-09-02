@@ -105,6 +105,11 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/mono/packages/file-viewer-advanced",
     readOnly: false,
   },
+  "ai-projects": {
+    name: "Projects",
+    path: "/home/loki/dev/mono/packages/ai-projects",
+    readOnly: false,
+  },
   minihttp: {
     name: "Mini HTTP Server",
     path: "/home/loki/dev/mono/packages/minihttp",
@@ -138,6 +143,16 @@ export const DEFAULT_WORKSPACES = {
   fmcApi: {
     name: "FMC API",
     path: "/home/loki/dev/fmc/api",
+    readOnly: false,
+  },
+  fmcOldWeb: {
+    name: "FMC Old Web",
+    path: "/home/loki/dev/fmc/web-2",
+    readOnly: false,
+  },
+  fmcOldApi: {
+    name: "FMC Old API",
+    path: "/home/loki/dev/fmc/api-old",
     readOnly: false,
   },
 };
