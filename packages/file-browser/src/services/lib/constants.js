@@ -100,6 +100,11 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/mono/packages/file-browser",
     readOnly: false,
   },
+  fileViewerAdvanced: {
+    name: "File Viewer Advanced",
+    path: "/home/loki/dev/mono/packages/file-viewer-advanced",
+    readOnly: false,
+  },
   minihttp: {
     name: "Mini HTTP Server",
     path: "/home/loki/dev/mono/packages/minihttp",

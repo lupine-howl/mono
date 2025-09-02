@@ -1,6 +1,7 @@
 // components/file-viewer.js
 import { LitElement, html, css } from "lit";
 import "@loki/file-browser/ui/file-bundle-bar.js";
+import { fsWrite } from "@loki/file-browser/util";
 
 // CodeMirror via CDN
 import {
@@ -270,23 +271,7 @@ export class FileViewerCM extends LitElement {
     if (["css", "scss", "less"].includes(ext)) return cssLang();
     return []; // plaintext
   }
-  /*
-  _theme() {
-    return EditorView.theme(
-      {
-        "&": { color: "#e7e7ea", backgroundColor: "#0f0f12" },
-        ".cm-content": { caretColor: "#ffffff" },
-        "&.cm-editor.cm-focused": { outline: "none" },
-        ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#ffffff" },
-        ".cm-selectionBackground, .cm-content ::selection": {
-          backgroundColor: "#264f78",
-        },
-        ".cm-activeLine": { backgroundColor: "#14141a" },
-      },
-      { dark: true }
-    );
-  }
-    */
+
   _theme() {
     // oneDark brings proper dark token colors.
     // Put your overrides AFTER to keep your app’s darker bg.
@@ -320,8 +305,19 @@ export class FileViewerCM extends LitElement {
         history(),
         indentOnInput(),
         lineNumbers(),
-        //syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        // Keep doc text in sync with component state
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) this._text = u.state.doc.toString();
+        }),
+        // Keybinding: Ctrl/Cmd+S to save via fsWrite
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          {
+            key: "Mod-s",
+            run: (view) => this._onSave(view),
+          },
+        ]),
         this._languageExt(),
       ];
       if (this.readOnly) extensions.push(EditorView.editable.of(false));
@@ -336,6 +332,20 @@ export class FileViewerCM extends LitElement {
       this._cmFailed = true;
       this.requestUpdate();
     }
+  }
+
+  async _onSave(view) {
+    if (this.readOnly || !this.ws || !this.path) return true;
+    try {
+      const content = view?.state?.doc?.toString?.() ??
+        this._view?.state?.doc?.toString?.() ??
+        this._text ?? "";
+      await fsWrite({ ws: this.ws, path: this.path, content });
+    } catch (e) {
+      this._error = e?.message || String(e);
+      this.requestUpdate();
+    }
+    return true; // handled
   }
 
   _dispose() {
