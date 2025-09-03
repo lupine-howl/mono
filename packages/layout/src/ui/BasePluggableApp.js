@@ -84,8 +84,8 @@ export class BasePluggableApp extends LitElement {
     return html`
       <div class="sidebar-section">
         ${this.ui.sidebar.map(
-          ({ label, render }) => html`
-            <div class="card">
+          ({ label, render, wrapperStyle }) => html`
+            <div class=${wrapperStyle || "card"}>
               <h3>${label}</h3>
               ${render({ controllers: this.controllers })}
             </div>
@@ -103,7 +103,7 @@ export class BasePluggableApp extends LitElement {
     return html`
       <app-tabs slot="header"></app-tabs>
       <app-content slot="body">
-        <div class="card">
+        <div class=${body.wrapperStyle || ""}>
           <h3>${body?.label ?? ""}</h3>
           ${body?.render
             ? body.render()

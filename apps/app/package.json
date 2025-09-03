@@ -21,6 +21,7 @@
     "@loki/personas": "../../packages/personas",
     "@loki/utilities": "../../packages/utilities",
     "@loki/tasks": "../../packages/tasks",
+    "@loki/terminal": "../../packages/terminal",
     "@loki/self-code-test": "../../packages/self-code-test",
     "lit": "^3.3.1"
   },

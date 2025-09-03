@@ -59,6 +59,7 @@ export class ChatMessage extends LitElement {
       text-align: left;
       white-space: normal;
       justify-self: start;
+      padding-top:8px;
     }
     .msg.user {
       justify-self: end;

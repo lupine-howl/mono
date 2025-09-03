@@ -120,11 +120,6 @@ export const DEFAULT_WORKSPACES = {
     path: "/home/loki/dev/mono/packages/ai-chat",
     readOnly: false,
   },
-  aiConsole: {
-    name: "AI Console",
-    path: "/home/loki/dev/mono/packages/ai-console",
-    readOnly: false,
-  },
   tasks: {
     name: "Tasks Component",
     path: "/home/loki/dev/mono/packages/tasks",
@@ -153,6 +148,11 @@ export const DEFAULT_WORKSPACES = {
   fmcOldApi: {
     name: "FMC Old API",
     path: "/home/loki/dev/fmc/api-old",
+    readOnly: false,
+  },
+  fmcNextLib: {
+    name: "FMC Next Lib",
+    path: "/home/loki/dev/fmc/next-lib",
     readOnly: false,
   },
 };

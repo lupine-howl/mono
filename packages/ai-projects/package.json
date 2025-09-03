@@ -26,7 +26,8 @@
     "build": "npm i && rm -rf dist && npm run build:ui && npm run build:services && npm run build:shared && npm run build:plugin && npm run build:schemas",
     "watch": "npm i && npm-run-all -p dev:ui dev:services dev:shared dev:plugin dev:schemas",
     "publish:patch": "npm version patch --no-git-tag-version && npm publish",
-    "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
+    "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples",
+    "echo":"echo \"farts\""
   },
   "dependencies": {
     "@loki/ai-chat": "../ai-chat",

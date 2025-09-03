@@ -32,6 +32,7 @@
     "@loki/minihttp": "../minihttp",
     "@loki/layout": "../layout",
     "@loki/file-browser": "../file-browser",
+    "@loki/terminal": "../terminal",
     "lit": "^3.3.1"
   },
   "devDependencies": {

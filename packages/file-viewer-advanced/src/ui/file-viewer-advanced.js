@@ -7,6 +7,7 @@ import "./md-viewer.js";
 //import "./csv-viewer.js";
 import "./html-preview.js";
 import "./json-tree-viewer.js";
+import "./package-viewer.js";
 
 export class FileViewerAdvanced extends LitElement {
   static styles = css`
@@ -107,6 +108,16 @@ export class FileViewerAdvanced extends LitElement {
       return html`<div class="hint">Select a file or folder.</div>`;
     if (this._loading) return html`<div class="hint">Loading…</div>`;
     if (this._error) return html`<div class="hint">Error: ${this._error}</div>`;
+
+    if (this._path.endsWith("package.json")) {
+      return html`<div class="wrap">
+        <package-viewer
+          .ws=${this._ws}
+          .path=${this._path}
+          .readOnly=${this.readOnly}
+        ></package-viewer>
+      </div>`;
+    }
 
     switch (this._resolved) {
       case "bundle":

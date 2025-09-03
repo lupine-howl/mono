@@ -22,6 +22,7 @@ export default ({ components }) => {
         id: `${ns}:context`,
         label: "🧩 Context",
         order: 20,
+        wrapperStyle: "card",
         render: () => html`<context-viewer></context-viewer>`,
       },
     ],

@@ -1,0 +1,47 @@
+{
+  "name": "@loki/terminal",
+  "version": "0.1.0",
+  "publishConfig": {
+    "registry": "http://localhost:4873"
+  },
+  "type": "module",
+  "author": "Your Name",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/services/index.js",
+    "./plugin": {
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.mjs",
+      "default": "./src/plugin/plugin.server.mjs"
+    },
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
+  },
+  "scripts": {
+    "build:ui": "esbuild src/ui/*.js --outdir=dist/ui --bundle --format=esm --platform=browser --packages=external --log-level=warning",
+    "build:services": "esbuild src/services/index.js --outdir=dist/services --bundle --format=esm --platform=node --packages=external --log-level=warning",
+    "build:plugin": "rsync -a --delete src/plugin/ dist/plugin/",
+    "build:shared": "esbuild src/shared/*.js --outdir=dist/shared --bundle --format=esm --platform=browser --packages=external --log-level=warning",
+    "dev:ui": "esbuild src/ui/*.js --outdir=dist/ui --bundle --format=esm --platform=browser --packages=external --log-level=warning --watch",
+    "dev:services": "esbuild src/services/index.js --outdir=dist/services --bundle --format=esm --platform=node --packages=external --log-level=warning --watch",
+    "dev:shared": "esbuild src/shared/*.js --outdir=dist/shared --bundle --format=esm --platform=browser --packages=external --log-level=warning --watch",
+    "dev:plugin": "npm run build:plugin && chokidar 'src/plugin/**' -i '**/.git/**' -c 'rsync -a --delete src/plugin/ dist/plugin/' --initial",
+    "build": "npm i && rm -rf dist && npm run build:ui && npm run build:services && npm run build:shared && npm run build:plugin",
+    "watch": "npm run build && npm-run-all -p dev:ui dev:services dev:shared dev:plugin",
+    "publish:patch": "npm version patch --no-git-tag-version && npm publish"
+  },
+  "peerDependencies": {
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "chokidar-cli": "^3.0.0",
+    "esbuild": "^0.25.9",
+    "npm-run-all": "^4.1.5"
+  },
+  "dependencies": {
+    "@loki/minihttp": "../minihttp",
+    "@loki/http-base": "../http-base",
+    "@loki/utilities": "../utilities",
+    "@loki/file-browser": "../file-browser"
+  }
+}

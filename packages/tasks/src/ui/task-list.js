@@ -15,6 +15,13 @@ export class TaskList extends LitElement {
       align-items: center;
       margin-bottom: 8px;
     }
+    .filters {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
     input,
     button {
       padding: 8px 10px;
@@ -65,6 +72,7 @@ export class TaskList extends LitElement {
     _draftTitle: { state: true },
     _draftWorkspaceId: { state: true },
     _draftToolId: { state: true },
+    _filterWorkspaceId: { state: true },
   };
 
   constructor() {
@@ -74,6 +82,7 @@ export class TaskList extends LitElement {
     this._draftTitle = "";
     this._draftWorkspaceId = "";
     this._draftToolId = "";
+    this._filterWorkspaceId = localStorage.getItem("tasks:filterWorkspaceId") || "";
   }
 
   #add = () => {
@@ -92,6 +101,11 @@ export class TaskList extends LitElement {
   render() {
     const { tasks = [], selectedId = null } = this.tasks.state ?? {};
     const pk = this.tasks.service?.pk ?? "id";
+
+    const filter = (this._filterWorkspaceId || "").trim();
+    const visibleTasks = filter
+      ? tasks.filter((t) => String(t?.workspaceId ?? "") === filter)
+      : tasks;
 
     return html`
       <form
@@ -121,9 +135,25 @@ export class TaskList extends LitElement {
         </button>
       </form>
 
+      <div class="filters">
+        <input
+          placeholder="Filter by workspaceId"
+          .value=${this._filterWorkspaceId}
+          @input=${(e) => {this._filterWorkspaceId = e.target.value;localStorage.setItem("tasks:filterWorkspaceId",this._filterWorkspaceId);}}
+        />
+        <button
+          type="button"
+          @click=${() => {this._filterWorkspaceId = "";localStorage.setItem("tasks:filterWorkspaceId","");}}
+          ?disabled=${!(this._filterWorkspaceId || "").trim()}
+          title="Clear workspace filter"
+        >
+          Clear
+        </button>
+      </div>
+
       <ul>
         ${repeat(
-          tasks,
+          visibleTasks,
           (t) => t?.[pk],
           (t) => html`
             <li
