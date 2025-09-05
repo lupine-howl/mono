@@ -6,7 +6,6 @@ export class TerminalViewer extends LitElement {
   static styles = css`
     :host {
       display: block;
-      height: 100%;
     }
     .wrap {
       display: flex;
@@ -75,7 +74,6 @@ export class TerminalViewer extends LitElement {
       opacity: 0.7;
     }
     textarea {
-      width: 100%;
       min-height: 80px;
       resize: vertical;
       background: #0f0f12;
@@ -83,6 +81,8 @@ export class TerminalViewer extends LitElement {
       color: #e7e7ea;
       border-radius: 8px;
       padding: 8px;
+      box-sizing:border-box;
+      width:100%;
     }
     .pill {
       border: 1px solid #2a2a30;

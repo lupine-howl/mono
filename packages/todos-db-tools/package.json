@@ -1,0 +1,17 @@
+{
+  "name": "@loki/todos",
+  "version": "0.3.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/services/index.js",
+    "./plugin": {
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.js",
+      "default": "./src/plugin/plugin.server.js"
+    },
+    "./schemas/*": "./src/schemas/*.js",
+    "./ui/*": "./src/ui/*.js",
+    "./util": "./src/shared/index.js"
+  },
+  "peerDependencies": { "lit": "^3.3.1" }
+}
