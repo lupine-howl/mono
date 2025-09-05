@@ -125,7 +125,7 @@ export class FileTree extends LitElement {
     // self-instantiate controller; it autowires the singleton service
     this.controller = new FileBrowserController({ eventName: "files:change" });
     this.tabController = new TabController();
-    
+
     // derived/working state
     this._ws = "";
     this._cwd = ".";
@@ -134,6 +134,9 @@ export class FileTree extends LitElement {
     this._error = null;
     this._selectedPath = null;
     this._selectedType = null;
+
+    // persisted open-state per workspace (Map<pathRel, boolean>)
+    this._openState = new Map();
 
     this._onCtrlChange = (e) => {
       const { ws, cwd, selection } = e.detail ?? {};
@@ -146,6 +149,7 @@ export class FileTree extends LitElement {
         this._selectedPath = null;
         this._selectedType = null;
         this._cwd = typeof cwd === "string" ? cwd : ".";
+        this._loadOpenStateForWS();
         if (this._ws) this._loadDir(this._cwd, true);
       } else if (cwdChanged) {
         this._cwd = cwd;
@@ -167,6 +171,7 @@ export class FileTree extends LitElement {
       this._cwd = this.controller.cwd ?? ".";
       this._selectedPath = this.controller.selection?.path ?? null;
       this._selectedType = this.controller.selection?.type ?? null;
+      this._loadOpenStateForWS();
       if (this._ws) this._loadDir(this._cwd, true);
     } else {
       this.controller
@@ -176,6 +181,7 @@ export class FileTree extends LitElement {
           this._cwd = this.controller.cwd ?? ".";
           this._selectedPath = this.controller.selection?.path ?? null;
           this._selectedType = this.controller.selection?.type ?? null;
+          this._loadOpenStateForWS();
           if (this._ws) this._loadDir(this._cwd, true);
           this.requestUpdate();
         })
@@ -234,8 +240,15 @@ export class FileTree extends LitElement {
       const abs = this._join(dirNode.path, item.name);
       const key = this._key(abs);
       const cached = this._nodes.get(key);
-      const open = cached?.open || false;
+      const persistedOpen = this._getOpen(abs);
+      const open = cached?.open ?? persistedOpen ?? false;
       const selected = this._selectedPath === abs;
+
+      // If this directory should be open from persisted state but not loaded yet, load it.
+      if (isDir && open && (!cached || !cached.childrenLoaded)) {
+        // fire-and-forget; safe to call during render since it schedules async work
+        this._loadDir(abs);
+      }
 
       return html`
         <div
@@ -305,6 +318,8 @@ export class FileTree extends LitElement {
     };
     node.open = !node.open;
     this._nodes.set(key, node);
+    // persist open-state per directory
+    this._setOpen(abs, node.open);
     this.requestUpdate();
     if (node.open && !node.childrenLoaded) await this._loadDir(abs);
   }
@@ -338,6 +353,9 @@ export class FileTree extends LitElement {
         type: "dir",
         open: true,
       };
+      // Respect persisted open state (fallback to opening the current working dir)
+      const persisted = this._getOpen(pathRel);
+      dirNode.open = typeof persisted === "boolean" ? persisted : pathRel === this._cwd;
       dirNode.children = items;
       dirNode.childrenLoaded = true;
       this._nodes.set(key, dirNode);
@@ -346,6 +364,51 @@ export class FileTree extends LitElement {
     } finally {
       if (pathRel === this._cwd) this._loadingRoot = false;
       this.requestUpdate();
+    }
+  }
+
+  // --- localStorage (persist open/closed state) ---
+  _openStateKey() {
+    return `file-browser:open:${this._ws || "__no_ws__"}`;
+  }
+
+  _loadOpenStateForWS() {
+    this._openState = new Map();
+    try {
+      const raw = localStorage.getItem(this._openStateKey());
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === "object") {
+        for (const [p, v] of Object.entries(obj)) {
+          this._openState.set(p, !!v);
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  _persistOpenState() {
+    try {
+      const obj = {};
+      for (const [p, v] of this._openState.entries()) obj[p] = !!v;
+      localStorage.setItem(this._openStateKey(), JSON.stringify(obj));
+    } catch (_) {
+      // ignore quota / serialization errors
+    }
+  }
+
+  _getOpen(pathRel) {
+    if (!this._openState) return undefined;
+    return this._openState.has(pathRel) ? this._openState.get(pathRel) : undefined;
+  }
+
+  _setOpen(pathRel, open) {
+    try {
+      this._openState.set(pathRel, !!open);
+      this._persistOpenState();
+    } catch (_) {
+      // ignore
     }
   }
 

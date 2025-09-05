@@ -21,6 +21,7 @@ export class ChatComposer extends LitElement {
     form {
       position: relative;
       left: 0px;
+      bottom:5px;
     }
     textarea {
       resize: none;
