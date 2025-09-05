@@ -1,6 +1,7 @@
 import { createOpenApiRpcClient } from "@loki/minihttp/util";
 const rpc = createOpenApiRpcClient({
-  base: typeof location !== "undefined" ? location.origin : "",
+  base:
+    typeof location !== "undefined" ? location.origin : "http://localhost:3000",
   openapiUrl: "/openapi.json",
 });
 
