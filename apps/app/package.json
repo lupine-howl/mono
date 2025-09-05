@@ -23,7 +23,8 @@
     "@loki/tasks": "../../packages/tasks",
     "@loki/terminal": "../../packages/terminal",
     "@loki/self-code-test": "../../packages/self-code-test",
-    "@loki/todos": "../../packages/todos",
+    "@loki/template": "../../packages/template",
+    "@loki/calendar": "../../packages/calendar",
     "lit": "^3.3.1"
   },
   "devDependencies": {

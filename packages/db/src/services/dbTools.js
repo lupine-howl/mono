@@ -92,7 +92,7 @@ export function registerDbTools(
     handler: ({ table, id }) => svc.delete(table, id),
     tags: tag,
   });
-  tools.define({
+  const dbSelect = tools.define({
     name: "dbSelect",
     description: "Select rows with equality filters, order, limit/offset",
     parameters: {

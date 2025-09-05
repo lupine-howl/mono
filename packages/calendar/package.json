@@ -1,6 +1,6 @@
 {
-  "name": "@loki/template",
-  "version": "0.3.0",
+  "name": "@loki/calendar",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/services/index.js",
@@ -13,16 +13,11 @@
     "./ui/*": "./src/ui/*",
     "./util": "./src/shared/index.js"
   },
-  "dependencies": {
-    "@loki/ai-projects": "../ai-projects",
-    "@loki/file-browser": "../file-browser",
-    "@loki/layout": "../layout",
-    "@loki/db": "../db",
-    "@loki/minihttp": "../minihttp",
-    "@loki/tasks": "../tasks",
-    "@loki/utilities": "../utilities"
-  },
   "peerDependencies": {
     "lit": "^3.3.1"
+  },
+  "dependencies": {
+    "@loki/db": "../db",
+    "@loki/utilities": "../utilities"
   }
 }

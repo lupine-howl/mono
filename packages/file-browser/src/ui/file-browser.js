@@ -117,6 +117,11 @@ export class FileTree extends LitElement {
     _error: { state: true },
     _selectedPath: { state: true },
     _selectedType: { state: true }, // 'file' | 'dir' | undefined
+
+    // public configurable list of names to ignore (files or directories).
+    // By default we skip node_modules, dist, and package lock (common noise).
+    // Accepts an array of strings. Patterns starting with '/' apply to directories by name.
+    ignores: { type: Array },
   };
 
   constructor() {
@@ -134,6 +139,9 @@ export class FileTree extends LitElement {
     this._error = null;
     this._selectedPath = null;
     this._selectedType = null;
+
+    // default ignores
+    this.ignores = ["/node_modules", "package.lock", "/dist"];
 
     // persisted open-state per workspace (Map<pathRel, boolean>)
     this._openState = new Map();
@@ -346,7 +354,9 @@ export class FileTree extends LitElement {
     this._error = null;
     try {
       const j = await this.controller.list(pathRel);
-      const items = Array.isArray(j?.items) ? j.items : [];
+      const itemsRaw = Array.isArray(j?.items) ? j.items : [];
+      // Apply ignore filters
+      const items = itemsRaw.filter((it) => !this._shouldIgnoreItem(it));
       const dirNode = this._nodes.get(key) || {
         path: pathRel,
         name: pathRel,
@@ -365,6 +375,32 @@ export class FileTree extends LitElement {
       if (pathRel === this._cwd) this._loadingRoot = false;
       this.requestUpdate();
     }
+  }
+
+  // --- ignore helpers ---
+  _shouldIgnoreItem(item) {
+    try {
+      const patterns = Array.isArray(this.ignores) ? this.ignores : [];
+      const name = item?.name ?? "";
+      const isDir = item?.type === "dir";
+      for (let pat of patterns) {
+        if (!pat) continue;
+        pat = String(pat).trim();
+        if (!pat) continue;
+        const startsSlash = pat.startsWith("/");
+        const token = startsSlash ? pat.slice(1) : pat;
+        if (!token) continue;
+        // '/foo' matches directories named 'foo'
+        if (startsSlash) {
+          if (isDir && name === token) return true;
+        } else {
+          if (name === token) return true;
+          // Be forgiving for common typo: 'package.lock' should also ignore 'package-lock.json'
+          if (token === "package.lock" && name === "package-lock.json") return true;
+        }
+      }
+    } catch (_) {}
+    return false;
   }
 
   // --- localStorage (persist open/closed state) ---
