@@ -17,10 +17,225 @@ import {
 // fs/service.js (top of file)
 const DEFAULT_BUNDLE_IGNORES = ["node_modules/", "dist/"];
 
-export function createFsService({ workspaces }) {
-  const ensureWs = makeEnsureWs(workspaces);
+// --- inside fs/service.js ---
+// --- inside fs/service.js ---
+
+const DEFAULT_WS_SCAN_IGNORES = [
+  "node_modules",
+  "dist",
+  ".git",
+  ".hg",
+  ".svn",
+  ".next",
+  ".cache",
+  ".turbo",
+  ".pnpm",
+  ".yarn",
+  ".gradle",
+  "build",
+  "out",
+  "coverage",
+  "target",
+  ".venv",
+  "venv",
+  "__pycache__",
+];
+
+function makeDynamicWsResolver({
+  root,
+  concurrency = 8,
+  ttlMs = 5000,
+  maxDirs = 20000,
+  maxFiles = 20000,
+  maxDepth = 6,
+  includeHidden = false,
+  extraIgnores = [],
+  // NEW: can be true/false or a number for levels. If undefined, auto-detect.
+  preferShallow,
+  shallowDepth = 2, // default shallow depth: 2 levels (packages/*/*/package.json)
+} = {}) {
+  const resolvedRoot = path.resolve(root);
+
+  async function pickExistingRoot() {
+    const st = await statSafe(resolvedRoot);
+    if (st?.isDirectory()) return resolvedRoot;
+    throw new Error(`Configured workspace root not found: ${resolvedRoot}`);
+  }
+
+  // cache
+  let cache = { at: 0, base: null, results: null, promise: null };
+
+  // NEW: shallow scan up to N levels (BFS), super fast for monorepos
+  async function scanLimitedDepth(base, levels) {
+    const results = new Map();
+    const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
+    const queue = [{ rel: ".", abs: base, depth: 0 }];
+    const seen = new Set();
+
+    while (queue.length) {
+      const { rel, abs, depth } = queue.shift();
+      if (seen.has(abs)) continue;
+      seen.add(abs);
+
+      // 1) if this dir has a package.json, register it
+      try {
+        const txt = await fs.readFile(path.join(abs, "package.json"), "utf8");
+        const pkg = JSON.parse(txt);
+        const id = rel === "." ? "." : rel.replace(/^[.\/]+/, "");
+        const name = pkg?.name || id || path.posix.basename(abs);
+        const wsObj = { id, name, path: abs, readOnly: false };
+        if (!results.has(id)) results.set(id, wsObj);
+        if (pkg?.name && !results.has(pkg.name)) results.set(pkg.name, wsObj);
+      } catch {
+        // no package.json here — OK
+      }
+
+      // 2) descend if we still have depth budget
+      if (depth >= levels) continue;
+      const entries = await fs.readdir(abs, { withFileTypes: true });
+      for (const ent of entries) {
+        if (!ent.isDirectory()) continue;
+        const name = ent.name;
+        if (!includeHidden && name.startsWith(".")) continue;
+        if (ignoreSet.has(name)) continue;
+        const childAbs = path.join(abs, name);
+        const childRel = rel === "." ? name : path.posix.join(rel, name);
+        queue.push({ rel: childRel, abs: childAbs, depth: depth + 1 });
+      }
+    }
+    return results;
+  }
+
+  // existing bounded deep scan for general roots
+  async function scanDeep(base) {
+    const results = new Map();
+    const start = Date.now();
+    const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
+
+    const stop = () => Date.now() - start > ttlMs || results.size >= maxFiles;
+    const depthOf = (rel) =>
+      !rel || rel === "." ? 0 : rel.split("/").length - 1;
+
+    await walkTreeConcurrent(base, ".", {
+      includeHidden,
+      concurrency,
+      followSymlinks: false,
+      stop,
+      shouldSkip: (name, relPath, isDir) => {
+        if (depthOf(relPath) > maxDepth) return true;
+        if (!includeHidden && name.startsWith(".")) return true;
+        if (isDir && ignoreSet.has(name)) return true;
+        return false;
+      },
+      async onDir() {},
+      async onFile(abs, relPath) {
+        if (path.posix.basename(relPath) !== "package.json") return;
+        const dirRel = path.posix.dirname(relPath);
+        const dirAbs = path.join(base, dirRel);
+        try {
+          const txt = await fs.readFile(abs, "utf8");
+          const pkgName = JSON.parse(txt)?.name;
+          const wsObj = {
+            id: dirRel,
+            name: pkgName || path.posix.basename(dirRel),
+            path: dirAbs,
+            readOnly: false,
+          };
+          if (!results.has(dirRel)) results.set(dirRel, wsObj);
+          if (pkgName && !results.has(pkgName)) results.set(pkgName, wsObj);
+        } catch {}
+      },
+    });
+
+    return results;
+  }
+
+  async function scanDynamicWorkspaces() {
+    const base = await pickExistingRoot();
+
+    // cache/coalesce
+    const now = Date.now();
+    if (cache.results && cache.base === base && now - cache.at < ttlMs) {
+      return { base, results: cache.results };
+    }
+    if (cache.promise && cache.base === base) return cache.promise;
+
+    // decide strategy
+    const baseHasPkg = !!(await statSafe(path.join(base, "package.json")));
+    let shallowLevels;
+    if (typeof preferShallow === "number") {
+      shallowLevels = Math.max(0, preferShallow);
+    } else if (preferShallow === true) {
+      shallowLevels = shallowDepth;
+    } else if (preferShallow === false) {
+      shallowLevels = 0;
+    } else {
+      // auto: if base is likely a packages dir or not a package itself → shallow first
+      shallowLevels =
+        path.basename(base) === "packages" || !baseHasPkg ? shallowDepth : 0;
+    }
+
+    cache.base = base;
+    cache.promise = (async () => {
+      let results;
+      if (shallowLevels > 0) {
+        results = await scanLimitedDepth(base, shallowLevels);
+        // fallback to deep if nothing found (unusual structure)
+        if (results.size === 0) results = await scanDeep(base);
+      } else {
+        results = await scanDeep(base);
+      }
+      cache.at = Date.now();
+      cache.results = results;
+      cache.promise = null;
+      return { base, results };
+    })();
+
+    return cache.promise;
+  }
+
+  async function ensureWsDynamic(id) {
+    if (!id) throw new Error("Workspace id required");
+    const { results } = await scanDynamicWorkspaces();
+    const w = results.get(String(id));
+    if (!w) throw new Error(`Unknown workspace: ${id}`);
+    return w;
+  }
+
+  async function fsWorkspacesDynamic() {
+    const { results } = await scanDynamicWorkspaces();
+    const uniq = new Map();
+    for (const w of results.values()) {
+      if (!uniq.has(w.path)) uniq.set(w.path, w);
+    }
+    return {
+      workspaces: Array.from(uniq.values()).map((w) => ({
+        id: w.id,
+        name: w.name,
+        path: w.path,
+        readOnly: !!w.readOnly,
+      })),
+    };
+  }
+
+  return { ensureWsDynamic, fsWorkspacesDynamic };
+}
+
+export function createFsService({ workspaces, root } = {}) {
+  // Determine mode: static (legacy) vs dynamic (scan by root)
+  const isDynamic = !workspaces || Object.keys(workspaces).length === 0;
+
+  const ensureStatic = workspaces ? makeEnsureWs(workspaces) : null;
+  const dynamicHelpers = isDynamic ? makeDynamicWsResolver({ root }) : null;
+
+  const ensureWs = async (ws) => {
+    if (isDynamic) return dynamicHelpers.ensureWsDynamic(ws);
+    // allow await on non-promise
+    return ensureStatic(ws);
+  };
 
   async function fsWorkspaces() {
+    if (isDynamic) return dynamicHelpers.fsWorkspacesDynamic();
     return {
       workspaces: Object.entries(workspaces).map(([id, w]) => ({
         id,
@@ -32,7 +247,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsList({ ws, rel = "." }) {
-    const { path: root } = ensureWs(ws);
+    const { path: root } = await ensureWs(ws);
     const dir = safeJoin(root, rel);
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
@@ -58,7 +273,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsRead({ ws, path: rel }) {
-    const { path: root } = ensureWs(ws);
+    const { path: root } = await ensureWs(ws);
     const file = safeJoin(root, rel);
     const st = await fs.stat(file);
 
@@ -84,7 +299,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsWrite({ ws, path: rel, content = "" }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
 
     const file = safeJoin(w.path, rel);
@@ -112,7 +327,7 @@ export function createFsService({ workspaces }) {
     let effectiveRel = rel || ".";
     if (effectiveRel.startsWith("/")) effectiveRel = effectiveRel.slice(1);
 
-    const { path: wsRoot } = ensureWs(ws);
+    const { path: wsRoot } = await ensureWs(ws);
     const startAbs = safeJoin(wsRoot, effectiveRel);
 
     const out = {
@@ -228,7 +443,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsApply({ ws, files }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
     if (!Array.isArray(files)) return { error: "files[] required" };
 
@@ -259,7 +474,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsMkdir({ ws, path: rel, recursive = true }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
     const abs = safeJoin(w.path, rel);
     await fs.mkdir(abs, { recursive });
@@ -267,7 +482,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsRename({ ws, from, to }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
     const absFrom = safeJoin(w.path, from);
     const absTo = safeJoin(w.path, to);
@@ -309,7 +524,7 @@ export function createFsService({ workspaces }) {
 
     let rel = baseRel || ".";
     if (rel.startsWith("/")) rel = rel.slice(1);
-    const { path: wsRoot } = ensureWs(ws);
+    const { path: wsRoot } = await ensureWs(ws);
     const startAbs = safeJoin(wsRoot, rel);
 
     // normalize desired set
@@ -394,7 +609,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsDelete({ ws, paths, recursive = true, force = true }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
     if (!Array.isArray(paths) || paths.length === 0)
       return { error: "paths[] required" };
@@ -411,7 +626,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsCopy({ ws, from, to, recursive = true, overwrite = true }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
     const absFrom = safeJoin(w.path, from);
     const absTo = safeJoin(w.path, to);
@@ -424,7 +639,7 @@ export function createFsService({ workspaces }) {
   }
 
   async function fsTouch({ ws, path: rel }) {
-    const w = ensureWs(ws);
+    const w = await ensureWs(ws);
     if (w.readOnly) return { error: "Workspace is read-only" };
     const abs = safeJoin(w.path, rel);
     // ensure parent exists
@@ -460,7 +675,7 @@ export function createFsService({ workspaces }) {
       recursive === "1" ||
       (typeof recursive === "string" && recursive.toLowerCase() === "true");
 
-    const { path: wsRoot } = ensureWs(ws);
+    const { path: wsRoot } = await ensureWs(ws);
     const startAbs = safeJoin(wsRoot, rel);
 
     const out = { workspace: ws, path: rel, files: [] };

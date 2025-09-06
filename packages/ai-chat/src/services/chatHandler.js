@@ -47,9 +47,10 @@ export function mountChatRoute(
         toolName,
         execute = false,
         messages,
+        max_completion_tokens = 32768, // = 8192,
         temperature,
-        max_completion_tokens = 8192,
         max_tokens,
+        reasoning = { effort: "low" },
         tool_choice: requestedToolChoice, // "none" | "auto" | forced
       } = args || {};
 
@@ -74,6 +75,7 @@ export function mountChatRoute(
         messages: msgs,
         tools,
         tool_choice,
+        //reasoning,
         ...(temperature != null ? { temperature } : {}),
         ...(max_completion_tokens != null ? { max_completion_tokens } : {}),
         ...(max_tokens != null ? { max_tokens } : {}),

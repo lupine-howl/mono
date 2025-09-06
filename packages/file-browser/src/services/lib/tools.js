@@ -2,13 +2,10 @@ import { createFsService } from "./service.js";
 import { DEFAULT_WORKSPACES, DEFAULT_SNAPSHOT_IGNORES } from "./constants.js";
 import path from "node:path";
 
-export function registerFsTools(
-  tools,
-  { workspaces = DEFAULT_WORKSPACES, logEntry } = {}
-) {
-  if (!workspaces) throw new Error("registerFsTools requires { workspaces }");
-
-  const svc = createFsService({ workspaces });
+export function registerFsTools(tools, { logEntry } = {}) {
+  const svc = createFsService({
+    root: "/home/loki/dev/mono",
+  });
 
   // ---- Download (binary-safe) -----------------------------------------------
 
