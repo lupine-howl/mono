@@ -110,4 +110,14 @@ export class AIChatController extends EventTarget {
 
   syncMessages = (opts) => this._service?.syncMessages?.(opts);
   setConversationId = (id) => this._service?.setConversationId?.(id);
+
+  // deletions (pass-throughs)
+  deleteMessage = (id) => this._service?.deleteMessage?.(id);
+  deleteByConversationId = (conversationId) =>
+    this._service?.deleteByConversationId?.(conversationId);
+  deleteAllMessages = () => this._service?.deleteAllMessages?.();
+  deleteMessagesByIds = (ids) => this._service?.deleteMessagesByIds?.(ids);
+
+  // optional convenience if you added it in the service
+  clearCurrentConversation = () => this._service?.clearCurrentConversation?.();
 }

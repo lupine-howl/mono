@@ -15,6 +15,8 @@ export class ChatAttachment extends LitElement {
       display: grid;
       gap: 6px;
       justify-self: end;
+      margin-top:10px;
+      margin-bottom:10px;
     }
     .row {
       display: flex;
@@ -27,7 +29,10 @@ export class ChatAttachment extends LitElement {
       gap: 8px;
       padding: 8px 10px;
       border-radius: 10px;
-      background: #19191d;
+      background: rgba(255,255,255,0.1);
+      border:1px solid rgba(255,255,255,0.101);
+      line-height:1em;
+      font-size:0.9em;
     }
     .icon {
       display: inline-grid;

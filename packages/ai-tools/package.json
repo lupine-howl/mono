@@ -1,0 +1,28 @@
+{
+  "name": "@loki/template",
+  "version": "0.3.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/services/index.js",
+    "./plugin": {
+      "browser": "./src/plugin/plugin.client.js",
+      "node": "./src/plugin/plugin.server.js",
+      "default": "./src/plugin/plugin.server.js"
+    },
+    "./schemas/*": "./src/schemas/*",
+    "./ui/*": "./src/ui/*",
+    "./util": "./src/shared/index.js"
+  },
+  "dependencies": {
+    "@loki/ai-projects": "../ai-projects",
+    "@loki/file-browser": "../file-browser",
+    "@loki/layout": "../layout",
+    "@loki/db": "../db",
+    "@loki/minihttp": "../minihttp",
+    "@loki/tasks": "../tasks",
+    "@loki/utilities": "../utilities"
+  },
+  "peerDependencies": {
+    "lit": "^3.3.1"
+  }
+}

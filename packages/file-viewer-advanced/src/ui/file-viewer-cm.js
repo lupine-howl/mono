@@ -11,7 +11,7 @@ import {
   highlightActiveLineGutter,
   lineNumbers,
 } from "https://esm.sh/@codemirror/view";
-import { EditorState } from "https://esm.sh/@codemirror/state";
+import { EditorState, EditorSelection } from "https://esm.sh/@codemirror/state";
 import {
   defaultKeymap,
   history,
@@ -120,6 +120,7 @@ export class FileViewerCM extends LitElement {
     this._cmFailed = false;
 
     this._view = null;
+    this._cursorStorageKey = null;
   }
 
   disconnectedCallback() {
@@ -297,6 +298,9 @@ export class FileViewerCM extends LitElement {
     try {
       this._dispose(); // always rebuild on new file/readonly change
 
+      // cursor position persistence key for this file
+      this._cursorStorageKey = `filecursor:${this.ws ?? ""}:${this.path ?? ""}`;
+
       const extensions = [
         this._theme(),
         highlightActiveLine(),
@@ -307,6 +311,14 @@ export class FileViewerCM extends LitElement {
         // Keep doc text in sync with component state
         EditorView.updateListener.of((u) => {
           if (u.docChanged) this._text = u.state.doc.toString();
+          // Save cursor position
+          const head = u.state.selection.main.head;
+          if (typeof head === "number") {
+            try {
+              const k = this._cursorStorageKey;
+              if (k) localStorage.setItem(k, String(head));
+            } catch {}
+          }
         }),
         // Keybinding: Ctrl/Cmd+S to save via fsWrite
         keymap.of([
@@ -321,8 +333,25 @@ export class FileViewerCM extends LitElement {
       ];
       if (this.readOnly) extensions.push(EditorView.editable.of(false));
 
+      // determine initial selection from storage
+      let initialSelection = null;
+      try {
+        const k = this._cursorStorageKey;
+        if (k) {
+          const saved = localStorage.getItem(k);
+          const pos = parseInt(saved, 10);
+          if (!Number.isNaN(pos)) initialSelection = EditorSelection.range(pos);
+        }
+      } catch {}
+
+      const state = EditorState.create({
+        doc: this._text ?? "",
+        selection: initialSelection ?? undefined,
+        extensions,
+      });
+
       this._view = new EditorView({
-        state: EditorState.create({ doc: this._text ?? "", extensions }),
+        state,
         parent: host,
       });
     } catch (err) {
@@ -363,7 +392,7 @@ export class FileViewerCM extends LitElement {
   }
 
   _download() {
-    const name = (this.path || "file").replace(/[^\w.-]+/g, "_");
+    const name = (this.path || "file").replace(/[^\\w.-]+/g, "_");
     if (this._encoding === "base64") {
       const a = Object.assign(document.createElement("a"), {
         href: this._buildUrl().toString(),

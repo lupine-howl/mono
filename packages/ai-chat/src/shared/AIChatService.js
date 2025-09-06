@@ -507,6 +507,142 @@ export class AIChatService extends EventTarget {
   setRpcBase(url) {
     this.set({ rpcBase: String(url || "/rpc") });
   }
+  // ===== deletions =====
+  /**
+   * Delete a single message by id.
+   * Updates local state and, if enabled, deletes from the DB.
+   */
+  async deleteMessage(id) {
+    if (!id) return false;
+
+    // remove from local state
+    const prevLen = this.state.messages.length;
+    this.state.messages = this.state.messages.filter((m) => m.id !== id);
+    const changed = this.state.messages.length !== prevLen;
+    if (changed) this.emit({ messages: this.state.messages });
+
+    // persist
+    if (this.persist.enabled) {
+      try {
+        await dbDelete({ table: this.persist.table, id });
+      } catch (e) {
+        this.log("deleteMessage persist failed", e);
+      }
+    }
+    return changed;
+  }
+
+  /**
+   * Delete all messages for a given conversationId. Defaults to current.
+   * Efficiently uses a single where-clause delete if supported,
+   * otherwise falls back to per-id deletes.
+   */
+  async deleteByConversationId(conversationId = this.state.conversationId) {
+    if (!conversationId) return { deleted: 0 };
+
+    // figure out which ids to drop locally (safe regardless of DB)
+    const ids = this.state.messages
+      .filter((m) => m.conversationId === conversationId)
+      .map((m) => m.id);
+
+    // local state update
+    if (ids.length) {
+      this.state.messages = this.state.messages.filter(
+        (m) => m.conversationId !== conversationId
+      );
+      this.emit({ messages: this.state.messages });
+    }
+
+    // persist
+    if (this.persist.enabled) {
+      try {
+        // Try a single where-delete (if your dbDelete supports where)
+        await dbDelete({
+          table: this.persist.table,
+          where: { conversationId },
+        });
+      } catch (e) {
+        // Fallback: per-id delete (if where is unsupported)
+        this.log("deleteByConversationId where-delete failed, falling back", e);
+        for (const id of ids) {
+          try {
+            await dbDelete({ table: this.persist.table, id });
+          } catch (e2) {
+            this.log("deleteByConversationId per-id persist failed", e2);
+          }
+        }
+      }
+    }
+
+    return { deleted: ids.length };
+  }
+
+  /**
+   * Delete ALL messages in the table (⚠ irreversible).
+   * Efficient when dbDelete supports where; otherwise deletes currently-loaded ids.
+   */
+  async deleteAllMessages() {
+    const ids = this.state.messages.map((m) => m.id);
+
+    // local state update
+    const hadAny = ids.length > 0;
+    if (hadAny) {
+      this.state.messages = [];
+      this.emit({ messages: this.state.messages });
+    }
+
+    if (this.persist.enabled) {
+      try {
+        // Prefer a table-wide delete if your adapter supports a blank/true where or a special flag.
+        // Option A: explicit always-true where
+        await dbDelete({ table: this.persist.table, where: {} });
+      } catch (e) {
+        // Fallback: delete whatever we know about by id (note: won’t remove rows not loaded in memory)
+        this.log("deleteAllMessages table-wide delete failed, falling back", e);
+        for (const id of ids) {
+          try {
+            await dbDelete({ table: this.persist.table, id });
+          } catch (e2) {
+            this.log("deleteAllMessages per-id persist failed", e2);
+          }
+        }
+      }
+    }
+
+    return { deleted: ids.length };
+  }
+
+  /**
+   * Convenience: bulk delete by an array of message ids.
+   */
+  async deleteMessagesByIds(ids = []) {
+    const set = new Set(ids.filter(Boolean));
+    if (!set.size) return { deleted: 0 };
+
+    // local state update
+    const before = this.state.messages.length;
+    this.state.messages = this.state.messages.filter((m) => !set.has(m.id));
+    const deletedCount = before - this.state.messages.length;
+    if (deletedCount > 0) this.emit({ messages: this.state.messages });
+
+    // persist
+    if (this.persist.enabled) {
+      // best effort per-id (portable across adapters)
+      for (const id of set) {
+        try {
+          await dbDelete({ table: this.persist.table, id });
+        } catch (e) {
+          this.log("deleteMessagesByIds persist failed", e);
+        }
+      }
+    }
+
+    return { deleted: deletedCount };
+  }
+
+  async clearCurrentConversation() {
+    return this.deleteByConversationId(this.state.conversationId);
+  }
 }
 
 // ---- singleton helpers ----

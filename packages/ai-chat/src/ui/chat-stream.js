@@ -174,19 +174,19 @@ export class ChatStream extends LitElement {
     if (kind === "image") {
       return html`<chat-images .message=${m}></chat-images>`;
     }
-    if (kind === "attachment") {
-      return html`<chat-attachment .message=${m}></chat-attachment>`;
+    else if (kind === "tool_waiting") {
+        return html`<div class="msg thinking">Thinking…</div>`
     }
-    if (kind === "tool_request") {
+    else if (kind === "tool_request") {
       return html`<chat-tool-request
         .message=${m}
         .controller=${this.controller}
       ></chat-tool-request>`;
     }
-    if (kind === "tool_rejected") {
+    else if (kind === "tool_rejected") {
       return html`<chat-tool-rejected .message=${m}></chat-tool-rejected>`;
     }
-    if (kind === "tool_result" || m.role === "tool") {
+    else if (kind === "tool_result" || m.role === "tool") {
       return html`<chat-tool-result .message=${m}></chat-tool-result>`;
     }
     return html`<chat-message
@@ -227,40 +227,49 @@ export class ChatStream extends LitElement {
       </div>
       <div class="messages" id="messages">
         ${msgs.map((m) => this._renderCard(m))}
-        ${busy ? html`<div class="msg thinking">Thinking…</div>` : ""}
         <div id="bottom-sentinel" style="height:1px;"></div>
       </div>
     `;
   }
 
-  _clearAll() {
-    const ok =
-      typeof window !== "undefined"
-        ? window.confirm("Clear all messages in this stream?")
-        : true;
+  async _clearAll() {
+    const convoId =
+      this._state?.conversationId ||
+      this.controller?.get?.()?.conversationId ||
+      null;
+
+    const question = convoId
+      ? `Clear all messages in conversation "${convoId}"?`
+      : `Clear ALL messages?`;
+    const ok = typeof window !== "undefined" ? window.confirm(question) : true;
     if (!ok) return;
-    // Clear locally
-    this.messages = [];
-    this.requestUpdate();
 
-    // Notify listeners
-    this.dispatchEvent(
-      new CustomEvent("stream-cleared", {
-        detail: { streamId: this.streamId },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    try {
+      if (convoId && this.controller?.deleteByConversationId) {
+        await this.controller.deleteByConversationId(convoId);
+      } else if (this.controller?.deleteAllMessages) {
+        await this.controller.deleteAllMessages();
+      }
 
-    // Attempt persistence layer if available
-    if (typeof this.controller?.clearStream === "function") {
-      try {
-        this.controller.clearStream(this.streamId);
-      } catch {}
+      // If this element was given a `messages` prop, make sure it doesn't override
+      // the service state after deletion.
+      this.messages = [];
+      this.requestUpdate();
+
+      this.dispatchEvent(
+        new CustomEvent("stream-cleared", {
+          detail: { streamId: this.streamId, conversationId: convoId },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    } catch (e) {
+      console.error("Clear messages failed:", e);
+      // Optional: surface a lightweight UI hint; you can replace alert with your toast.
+      if (typeof window !== "undefined") alert("Failed to clear messages.");
     }
   }
 }
-
 if (!customElements.get("chat-stream")) {
   customElements.define("chat-stream", ChatStream);
 }
