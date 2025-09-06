@@ -1,115 +1,219 @@
 import { LitElement, html, css } from "lit";
-import { repeat } from "lit/directives/repeat.js";
 import { EventController } from "../shared/EventController.js";
 
-function fmtDate(ms){ try{ return new Date(ms).toLocaleString(); }catch{ return String(ms); } }
+// FullCalendar imports
+import { Calendar } from "@fullcalendar/core";
+import dayGridPlugin from "@fullcalendar/daygrid";
+import timeGridPlugin from "@fullcalendar/timegrid";
+import listPlugin from "@fullcalendar/list";
+import interactionPlugin from "@fullcalendar/interaction";
 
-class CalendarView extends LitElement {
+const FC_CSS = [
+  "https://cdn.jsdelivr.net/npm/@fullcalendar/common@6.1.15/index.css",
+  "https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid@6.1.15/index.css",
+  "https://cdn.jsdelivr.net/npm/@fullcalendar/timegrid@6.1.15/index.css",
+  "https://cdn.jsdelivr.net/npm/@fullcalendar/list@6.1.15/index.css",
+];
+
+function ensureStyles(shadowRoot) {
+  if (!shadowRoot) return;
+  const marker = shadowRoot.querySelector("link[data-fc]");
+  if (marker) return; // already added
+  for (const href of FC_CSS) {
+    const link = document.createElement("link");
+    link.setAttribute("rel", "stylesheet");
+    link.setAttribute("href", href);
+    link.setAttribute("data-fc", "");
+    shadowRoot.appendChild(link);
+  }
+}
+
+function toISOms(ms) {
+  if (ms == null) return null;
+  try {
+    return new Date(ms).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function intersectsRange(ev, start, end) {
+  const s = ev.start ?? 0;
+  const e = ev.end ?? ev.start ?? 0;
+  return s < end.getTime() && (e == null || e > start.getTime());
+}
+
+export class CalendarView extends LitElement {
   static styles = css`
-    :host { display: block; }
-    form, .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    input, textarea, button, select { padding: 8px 10px; border-radius: 10px; border: 1px solid #2a2a30; background: #0b0b0c; color: inherit; font: inherit; }
-    button { cursor: pointer; background: #1b1b1f; }
-    .list { margin: 10px 0; display: grid; gap: 6px; }
-    .item { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px; border: 1px solid #1f1f22; border-radius: 10px; background: #0f0f12; }
-    .title { font-weight: 600; }
-    .meta { font-size: 12px; opacity: 0.8; }
-    .bulk { width: 100%; min-height: 80px; }
+    :host {
+      display: block;
+      min-height: 600px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    input,
+    button,
+    select {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #2a2a30;
+      background: #0b0b0c;
+      color: inherit;
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+      background: #1b1b1f;
+    }
+    .cal {
+      border: 1px solid #1f1f22;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #0f0f12;
+    }
   `;
+
   static properties = {
-    _draftTitle: { state: true },
-    _draftStart: { state: true },
-    _draftEnd: { state: true },
-    _draftAllDay: { state: true },
-    _draftDesc: { state: true },
-    _draftLoc: { state: true },
-    _bulkJson: { state: true },
     _calendarId: { state: true },
   };
-  constructor(){
+
+  constructor() {
     super();
     this.ctrl = new EventController(this, {});
-    this._draftTitle = "";
-    this._draftStart = ""; // ISO string input
-    this._draftEnd = "";
-    this._draftAllDay = false;
-    this._draftDesc = "";
-    this._draftLoc = "";
-    this._bulkJson = "";
     this._calendarId = "";
+    this._calendar = null;
+    this._calEl = null;
   }
 
-  get _items(){
-    const items = this.ctrl.state.items ?? [];
-    return [...items].sort((a,b)=> (a.start||0) - (b.start||0));
-  }
-
-  render(){
-    const disableAdd = !(this._draftTitle || "").trim() || !(this._draftStart || "").trim();
-    return html`
-      <form @submit=${(e)=>{ e.preventDefault(); this._addOne(); }}>
-        <input placeholder="Title" .value=${this._draftTitle} @input=${e=>this._draftTitle=e.target.value} />
-        <input type="datetime-local" .value=${this._draftStart} @input=${e=>this._draftStart=e.target.value} />
-        <input type="datetime-local" .value=${this._draftEnd} @input=${e=>this._draftEnd=e.target.value} />
-        <label><input type="checkbox" .checked=${this._draftAllDay} @change=${e=>this._draftAllDay=e.target.checked} /> All day</label>
-        <input placeholder="Location" .value=${this._draftLoc} @input=${e=>this._draftLoc=e.target.value} />
-        <input placeholder="Calendar ID (optional)" .value=${this._calendarId} @input=${e=>this._calendarId=e.target.value} />
-        <input placeholder="Description" .value=${this._draftDesc} @input=${e=>this._draftDesc=e.target.value} />
-        <button ?disabled=${disableAdd}>Add event</button>
-      </form>
-
-      <details style="margin-top:10px;">
-        <summary>Bulk add (paste JSON array of events)</summary>
-        <textarea class="bulk" placeholder='[{"title":"Meeting","start":"2025-09-05T09:00"}]' .value=${this._bulkJson} @input=${e=>this._bulkJson=e.target.value}></textarea>
-        <div class="row">
-          <button @click=${this._addBulk}>Create events</button>
-        </div>
-      </details>
-
-      <div class="list">
-        ${repeat(this._items, it=>it.id, it=> html`
-          <div class="item">
-            <div>
-              <div class="title">${it.title}</div>
-              <div class="meta">${fmtDate(it.start)} ${it.end? html`– ${fmtDate(it.end)}`: ''} ${it.allDay? html`• All day`: ''} ${it.location? html`• ${it.location}`: ''}</div>
-            </div>
-            <div>
-              <button title="Delete" @click=${()=>this.ctrl.remove(it.id)}>✕</button>
-            </div>
-          </div>
-        `)}
-      </div>
-    `;
-  }
-
-  async _addOne(){
-    await this.ctrl.createOne({
-      title: this._draftTitle,
-      start: this._draftStart,
-      end: this._draftEnd || null,
-      allDay: this._draftAllDay,
-      description: this._draftDesc || null,
-      location: this._draftLoc || null,
-      calendarId: this._calendarId || null,
+  firstUpdated() {
+    ensureStyles(this.renderRoot);
+    this._calEl = this.renderRoot?.querySelector("#cal");
+    this._calendar = new Calendar(this._calEl, {
+      plugins: [dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin],
+      initialView: "dayGridMonth",
+      headerToolbar: {
+        left: "prev,next today",
+        center: "title",
+        right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
+      },
+      navLinks: true,
+      nowIndicator: true,
+      selectable: true,
+      selectMirror: true,
+      editable: true,
+      eventTimeFormat: { hour: "2-digit", minute: "2-digit", meridiem: false },
+      events: (fetchInfo, successCallback, failureCallback) => {
+        try {
+          const items = (this.ctrl?.state?.items ?? [])
+            .filter((ev) =>
+              this._calendarId ? ev.calendarId === this._calendarId : true
+            )
+            .filter((ev) =>
+              intersectsRange(ev, fetchInfo.start, fetchInfo.end)
+            );
+          const mapped = items.map((ev) => ({
+            id: ev.id,
+            title: ev.title ?? "Untitled",
+            start: toISOms(ev.start),
+            end: toISOms(ev.end),
+            allDay: !!ev.allDay,
+            extendedProps: {
+              description: ev.description ?? null,
+              location: ev.location ?? null,
+              calendarId: ev.calendarId ?? null,
+            },
+          }));
+          successCallback(mapped);
+        } catch (err) {
+          failureCallback?.(err);
+        }
+      },
+      select: async (info) => {
+        const title = prompt("Event title?");
+        if (title && title.trim()) {
+          await this.ctrl.createOne({
+            title: title.trim(),
+            start: info.startStr,
+            end: info.endStr,
+            allDay: info.allDay,
+            calendarId: this._calendarId || null,
+          });
+        }
+        this._calendar.unselect();
+      },
+      eventDrop: async (info) => {
+        await this._updateFromEvent(info.event);
+      },
+      eventResize: async (info) => {
+        await this._updateFromEvent(info.event);
+      },
+      eventClick: async (info) => {
+        const current = info.event.title || "";
+        const next = prompt(
+          "Edit title (leave unchanged or cancel to skip):",
+          current
+        );
+        if (next != null && next !== current) {
+          await this.ctrl.update(info.event.id, { title: String(next).trim() });
+          return;
+        }
+        // optional delete
+        if (confirm("Delete this event?")) {
+          await this.ctrl.remove(info.event.id);
+        }
+      },
     });
-    this._draftTitle = "";
-    this._draftStart = "";
-    this._draftEnd = "";
-    this._draftAllDay = false;
-    this._draftDesc = "";
-    this._draftLoc = "";
+    this._calendar.render();
   }
 
-  async _addBulk(){
-    try{
-      const arr = JSON.parse(this._bulkJson || "[]");
-      if (!Array.isArray(arr)) throw new Error("Bulk JSON must be an array");
-      await this.ctrl.createMany(arr, { calendarId: this._calendarId || null });
-      this._bulkJson = "";
-    }catch(err){
-      console.error(err);
-      alert("Invalid JSON for bulk events");
-    }
+  disconnectedCallback() {
+    super.disconnectedCallback?.();
+    this._calendar?.destroy();
+    this._calendar = null;
+  }
+
+  async _updateFromEvent(fcEvent) {
+    const patch = {
+      title: fcEvent.title ?? undefined,
+      start: fcEvent.start ? fcEvent.start.getTime() : undefined,
+      end: fcEvent.end ? fcEvent.end.getTime() : null,
+      allDay: !!fcEvent.allDay,
+      calendarId:
+        (fcEvent.extendedProps?.calendarId ?? this._calendarId) || null,
+    };
+    await this.ctrl.update(fcEvent.id, patch);
+  }
+
+  updated(changed) {
+    // whenever store or filter changes, refetch
+    if (this._calendar) this._calendar.refetchEvents();
+  }
+
+  render() {
+    return html`
+      <div class="toolbar">
+        <input
+          placeholder="Filter by calendarId"
+          .value=${this._calendarId}
+          @input=${(e) => {
+            this._calendarId = e.target.value;
+            this.ctrl.list({ calendarId: this._calendarId || undefined });
+          }}
+        />
+        <button
+          @click=${() =>
+            this.ctrl.list({ calendarId: this._calendarId || undefined })}
+        >
+          Reload
+        </button>
+      </div>
+      <div id="cal" class="cal"></div>
+    `;
   }
 }
 
