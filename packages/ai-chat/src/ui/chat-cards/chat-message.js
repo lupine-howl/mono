@@ -306,17 +306,7 @@ export class ChatMessage extends LitElement {
     // Plaintext rendering
     return html`
       <div class="msg ${role}">
-        <slot hidden @slotchange=${this._onSlotChange}></slot>
-        <div class="md plaintext" style="white-space: pre-wrap" @click=${this._onClickCopy}>${displayRaw}</div>
-        ${this.truncate
-          ? html`<div class="truncate-controls">
-              ${this._expanded
-                ? html`<button class="toggle-btn" type="button" @click=${this._toggleExpand}>Less</button>`
-                : truncated
-                ? html`<button class="toggle-btn" type="button" @click=${this._toggleExpand}>More</button>`
-                : null}
-            </div>`
-          : null}
+        <slot @slotchange=${this._onSlotChange}></slot>
       </div>
     `;
   }

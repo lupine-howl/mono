@@ -10,7 +10,7 @@ export class ChatAttachment extends LitElement {
       //border-radius: 12px;
       //padding: 10px 12px;
       width: fit-content;
-      min-width:200px;
+      min-width: 200px;
       max-width: 600px;
       display: grid;
       gap: 6px;
@@ -77,6 +77,7 @@ export class ChatAttachment extends LitElement {
 
   render() {
     const m = this.message ?? {};
+    //console.log(m);
     const data = parseMaybeJSON(m.content) || {};
     const { file, lang, path } = fileMeta(data);
     const text = typeof data.content === "string" ? data.content : "";

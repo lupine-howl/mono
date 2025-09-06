@@ -9,6 +9,7 @@ import "./chat-cards/chat-tool-request.js";
 import "./chat-cards/chat-tool-result.js";
 import "./chat-cards/chat-tool-rejected.js";
 import "./chat-cards/chat-images.js";
+import json from "highlight.js/lib/languages/json";
 
 const isScrollable = (el) => {
   if (!el || el === document) return false;
@@ -155,6 +156,12 @@ export class ChatStream extends LitElement {
 
   _renderCard(m) {
     let kind = m.kind;
+    let attachments = [];
+    try {
+      attachments = JSON.parse(m.attachments || "[]");
+    } catch {
+      // Handle error
+    }
     if (kind === "image") {
       return html`<chat-images .message=${m}></chat-images>`;
     }
@@ -173,7 +180,18 @@ export class ChatStream extends LitElement {
     if (kind === "tool_result" || m.role === "tool") {
       return html`<chat-tool-result .message=${m}></chat-tool-result>`;
     }
-    return html`<chat-message .truncate=${m.role==="user"} .role=${m.role} .plaintext=${m.role==="user"}>${m.content}</chat-message>`;
+    return html`<chat-message
+      .truncate=${m.role === "user"}
+      .role=${m.role}
+      .plaintext=${m.role === "user"}
+    >
+      ${m.content}
+      ${attachments?.map(
+        (a) => html`<chat-attachment
+          .message=${{ role: "system", kind: "attachment", content: a }}
+        ></chat-attachment>`
+      )}
+    </chat-message>`;
   }
 
   render() {

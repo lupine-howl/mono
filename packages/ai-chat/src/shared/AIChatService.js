@@ -132,7 +132,7 @@ export class AIChatService extends EventTarget {
     }
   }
 
-  _buildChatMessages({ persona, customInstructions, history }) {
+  _buildChatMessages({ persona, customInstructions, history, context }) {
     const msgs = [];
     const p = (persona ?? "").trim();
     const ci = (customInstructions ?? "").trim();
@@ -140,26 +140,6 @@ export class AIChatService extends EventTarget {
     if (ci) msgs.push({ role: "system", content: ci });
 
     const H = Array.isArray(history) ? history : [];
-
-    // CONFIG
-    const KEEP_LATEST_ATTACHMENTS = 1; // keep last N attachments untruncated
-    const ATTACH_TRUNC_LIMIT = 1000; // chars
-
-    // Find indices of the last N attachment messages (anywhere in the history)
-    const latestAttachmentIdx = new Set();
-    if (KEEP_LATEST_ATTACHMENTS > 0) {
-      let kept = 0;
-      for (
-        let i = H.length - 1;
-        i >= 0 && kept < KEEP_LATEST_ATTACHMENTS;
-        i--
-      ) {
-        if (H[i]?.kind === "attachment") {
-          latestAttachmentIdx.add(i);
-          kept++;
-        }
-      }
-    }
 
     for (let i = 0; i < H.length; i++) {
       const m = H[i];
@@ -173,21 +153,18 @@ export class AIChatService extends EventTarget {
             ? m.content
             : m?.content?.toString?.() ?? "";
 
-        // Truncate only historical attachments (not the latest N)
-        if (
-          m?.kind === "attachment" &&
-          !latestAttachmentIdx.has(i) &&
-          content.length > ATTACH_TRUNC_LIMIT
-        ) {
-          const suffix = "… [truncated historical attachment]";
-          content =
-            content.slice(0, ATTACH_TRUNC_LIMIT - suffix.length) + suffix;
-        }
-
         msgs.push({ role: m.role, content });
       }
     }
 
+    if (context && context.length) {
+      const ctx =
+        typeof context === "string"
+          ? context
+          : JSON.stringify(context, null, 2);
+      //console.log("context", context);
+      msgs.push({ role: "system", content: ctx });
+    }
     return msgs;
   }
 
@@ -351,42 +328,18 @@ export class AIChatService extends EventTarget {
     const text = String(prompt || "").trim();
     if (!text) return;
 
+    const ctx = [];
+    console.log(typeof this.state.context, this.state.context);
+    if (this.state.context) ctx.push(this.state.context);
+    if (this.state.attachments?.length) ctx.push(...this.state.attachments);
+
     // 1) user message
-    this._pushMessage({ role: "user", content: text, kind: "chat" });
-
-    // Include ad-hoc string context (if used)
-    if (this.state.context) {
-      this._pushMessage({
-        role: "system",
-        content: this.state.context,
-        kind: "attachment",
-      });
-    }
-
-    // Include attachments as system "attachment" messages (visible in ChatStream)
-    const atts = Array.isArray(this.state.attachments)
-      ? this.state.attachments
-      : [];
-    for (const a of atts) {
-      // keep a copy so UI cards can render it
-      const msg = {
-        role: "system",
-        kind: "attachment",
-        name: a.name,
-        mime: a.mime,
-        type: a.type,
-        lang: a.lang,
-        url: a.url ?? null,
-        // For text, place the content in 'content' as well for LLMs that parse plain text
-        content:
-          a.type === "text"
-            ? String(a.data ?? "")
-            : a.name || a.mime || a.type || "attachment",
-        // For images or other types, keep the raw data URL in a separate field
-        data: a.type === "image" ? a.data ?? null : null,
-      };
-      this._pushMessage(msg);
-    }
+    this._pushMessage({
+      role: "user",
+      content: text,
+      kind: "chat",
+      attachments: ctx,
+    });
 
     // 2) UI intent
     this.set({ loading: true });
@@ -396,6 +349,7 @@ export class AIChatService extends EventTarget {
         persona: this.state.persona,
         customInstructions: this.state.customInstructions, // NEW
         history: this.state.messages,
+        context: ctx,
       });
 
       const payload = { model: this.state.model || undefined, messages };
@@ -470,7 +424,7 @@ export class AIChatService extends EventTarget {
       this.log("submit error", e);
       this._pushMessage({
         role: "assistant",
-        content: `Error: ${e}`,
+        content: `⚠️${e}`,
         kind: "chat",
       });
     } finally {
@@ -489,7 +443,7 @@ export class AIChatService extends EventTarget {
   }
   setContext(v) {
     this.set({
-      context: typeof v === "string" ? v : JSON.stringify(v, null, 2),
+      context: v,
     });
   }
   // REMOVED: setContextPrefix

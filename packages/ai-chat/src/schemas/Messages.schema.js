@@ -28,17 +28,24 @@ export const messagesSchema = {
     },
     args: {
       type: ["object", "null"],
-      description: "Tool args payload (for tool_request",
+      description: "Tool args payload (for tool_request)",
     },
     result: {
       type: ["object", "null"],
-      description: "Tool result payload (for tool_result",
+      description: "Tool result payload (for tool_result)",
     },
     ok: {
       type: ["boolean", "null"],
       description: "Success flag for tool_result",
     },
     ref: { type: ["string", "null"], description: "Links to request msg.id" },
+
+    attachments: {
+      type: ["array", "null"],
+      description: "Context items associated with this message",
+      default: null,
+      items: {} // empty schema = any type (string, number, object, array, boolean, null)
+    },
 
     // timestamps
     t: { type: "integer" }, // millis
