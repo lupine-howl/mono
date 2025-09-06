@@ -173,20 +173,21 @@ export class ChatStream extends LitElement {
     }
     if (kind === "image") {
       return html`<chat-images .message=${m}></chat-images>`;
-    }
-    else if (kind === "tool_waiting") {
-        return html`<div class="msg thinking">Thinking…</div>`
-    }
-    else if (kind === "tool_request") {
+    } else if (kind === "tool_waiting") {
+      return html`<shimmer-effect
+        ><chat-tool-request class="msg thinking"         
+        .message=${m}
+        .controller=${this.controller}
+></chat-tool-request></shimmer-effect
+      >`;
+    } else if (kind === "tool_request") {
       return html`<chat-tool-request
         .message=${m}
         .controller=${this.controller}
       ></chat-tool-request>`;
-    }
-    else if (kind === "tool_rejected") {
+    } else if (kind === "tool_rejected") {
       return html`<chat-tool-rejected .message=${m}></chat-tool-rejected>`;
-    }
-    else if (kind === "tool_result" || m.role === "tool") {
+    } else if (kind === "tool_result" || m.role === "tool") {
       return html`<chat-tool-result .message=${m}></chat-tool-result>`;
     }
     return html`<chat-message

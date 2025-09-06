@@ -50,7 +50,7 @@ export class ChatMessage extends LitElement {
       overflow:hidden;
     }
     .msg {
-      padding: 4px 14px;
+      padding: 8px 14px;
       line-height: 1.5em;
       border-radius: 28px;
       background: #303030;
@@ -60,7 +60,6 @@ export class ChatMessage extends LitElement {
       text-align: left;
       white-space: normal;
       justify-self: start;
-      padding-top:8px;
     }
     .msg.user {
       justify-self: end;
