@@ -35,6 +35,7 @@
     "@loki/http-base": "../http-base",
     "@loki/layout": "../layout",
     "@loki/minihttp": "../minihttp",
+    "@loki/db": "../db",
     "@loki/utilities": "../utilities",
     "lit": "^3.3.1"
   },

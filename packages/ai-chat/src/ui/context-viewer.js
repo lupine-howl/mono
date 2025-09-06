@@ -95,6 +95,10 @@ export class ChatContextViewer extends LitElement {
     const toolArgs = s.toolArgs ?? null;
     const aiResult = s.aiResult ?? null;
     const attachments = Array.isArray(s.attachments) ? s.attachments : [];
+    const context =
+      typeof s.context === "string"
+        ? s.context
+        : JSON.stringify(s.context, null, 2);
 
     return html`
       <div class="wrap">
@@ -123,7 +127,7 @@ export class ChatContextViewer extends LitElement {
           </div>
 
           <div class="k">context</div>
-          <div class="v"><code>${(s.context ?? "").trim() || "—"}</code></div>
+          <div class="v"><code>${context}</code></div>
 
           <div class="k">toolName</div>
           <div class="v">${s.toolName ?? ""}</div>

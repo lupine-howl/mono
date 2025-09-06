@@ -71,6 +71,15 @@ export class ChatStream extends LitElement {
     .thinking {
       padding: 10px;
     }
+    .btn {
+      border: 1px solid #2a2a30;
+      background: #151519;
+      color: inherit;
+      font: inherit;
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
   `;
 
   static properties = {
@@ -203,16 +212,52 @@ export class ChatStream extends LitElement {
         : this.loading) ?? false;
 
     return html`
+      <div
+        class="clear-row"
+        style="position:fixed; right:100px; bottom:100px; z-index:10;"
+      >
+        <button
+          class="btn"
+          style="width:60px;height:60px;border-radius:999px"
+          @click=${this._clearAll}
+          title="Clear history"
+        >
+          Clear
+        </button>
+      </div>
       <div class="messages" id="messages">
         ${msgs.map((m) => this._renderCard(m))}
-        ${busy
-          ? html`<div class="msg thinking">
-              <shimmer-effect>Thinking…</shimmer-effect>
-            </div>`
-          : ""}
+        ${busy ? html`<div class="msg thinking">Thinking…</div>` : ""}
         <div id="bottom-sentinel" style="height:1px;"></div>
       </div>
     `;
+  }
+
+  _clearAll() {
+    const ok =
+      typeof window !== "undefined"
+        ? window.confirm("Clear all messages in this stream?")
+        : true;
+    if (!ok) return;
+    // Clear locally
+    this.messages = [];
+    this.requestUpdate();
+
+    // Notify listeners
+    this.dispatchEvent(
+      new CustomEvent("stream-cleared", {
+        detail: { streamId: this.streamId },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    // Attempt persistence layer if available
+    if (typeof this.controller?.clearStream === "function") {
+      try {
+        this.controller.clearStream(this.streamId);
+      } catch {}
+    }
   }
 }
 

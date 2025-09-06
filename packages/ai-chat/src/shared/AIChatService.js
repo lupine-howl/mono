@@ -3,6 +3,7 @@ import { createLogger } from "@loki/http-base/util";
 import { createOpenApiRpcClient } from "@loki/minihttp/util";
 import { toolsService } from "@loki/minihttp/util"; // ensure this path resolves to your ToolsService export
 import { getGlobalSingleton } from "@loki/utilities";
+import { dbSelect, dbInsert, dbUpdate, dbDelete } from "@loki/db/util";
 
 const MAX_TURNS = 40;
 const PREFS_KEY = "aiChat.prefs.v1";
@@ -190,7 +191,7 @@ export class AIChatService extends EventTarget {
     this.emit({ messages: this.state.messages });
 
     if (this.persist.enabled) {
-      this._call("dbInsert", { table: this.persist.table, values: msg })
+      dbInsert({ table: this.persist.table, values: msg })
         .then((r) => {
           if (r?.item) this._updateMessage(msg.id, r.item);
         })
@@ -211,8 +212,8 @@ export class AIChatService extends EventTarget {
     if (changed) {
       this.emit({ messages: this.state.messages });
       if (this.persist.enabled) {
-        this._call("dbUpdate", { table: this.persist.table, id, patch }).catch(
-          (e) => this.log("persist update failed", e)
+        dbUpdate({ table: this.persist.table, id, patch }).catch((e) =>
+          this.log("persist update failed", e)
         );
       }
     }
@@ -223,7 +224,7 @@ export class AIChatService extends EventTarget {
   async syncMessages({ limit = 1000 } = {}) {
     if (!this.persist.enabled) return;
     try {
-      const r = await this._call("dbSelect", {
+      const r = await dbSelect({
         table: this.persist.table,
         where: { conversationId: this.state.conversationId },
         limit,
