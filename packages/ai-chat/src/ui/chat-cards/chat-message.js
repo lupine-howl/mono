@@ -47,7 +47,7 @@ export class ChatMessage extends LitElement {
   static styles = css`
     :host {
       display: block;
-      overflow:hidden;
+      overflow: hidden;
     }
     .msg {
       padding: 8px 14px;
@@ -170,21 +170,6 @@ export class ChatMessage extends LitElement {
       font-weight: 600;
     }
 
-    /* Toggle footer */
-    .truncate-controls {
-      margin-top: 6px;
-      font-size: 12px;
-      opacity: 0.85;
-    }
-    .toggle-btn {
-      background: none;
-      color: #8aa1ff;
-      border: none;
-      padding: 0;
-      font: inherit;
-      cursor: pointer;
-    }
-
     /* hide the raw slot; we re-render its text as markdown */
     slot[hidden] {
       display: none !important;
@@ -204,13 +189,6 @@ export class ChatMessage extends LitElement {
 
     // Optional direct content override (string). If not set, we read from slot.
     content: { type: String },
-
-    // Truncation API (idiomatic: character-based to keep DOM/simple)
-    truncate: { type: Boolean, reflect: true },
-    maxChars: { type: Number, attribute: "max-chars" },
-
-    // Internal state
-    _expanded: { state: true },
   };
 
   constructor() {
@@ -223,10 +201,6 @@ export class ChatMessage extends LitElement {
     this.role = ""; // user|assistant|system
     this.content = undefined;
 
-    this.truncate = false;
-    this.maxChars = 600; // sensible default
-    this._expanded = false;
-
     this._slotText = "";
   }
 
@@ -234,21 +208,13 @@ export class ChatMessage extends LitElement {
   _onSlotChange(e) {
     const slot = e.target;
     const text = (slot.assignedNodes({ flatten: true }) || [])
-      .map((n) => (n.nodeType === Node.TEXT_NODE ? n.nodeValue : n.textContent) || "")
+      .map(
+        (n) =>
+          (n.nodeType === Node.TEXT_NODE ? n.nodeValue : n.textContent) || ""
+      )
       .join("");
-    this._slotText = this._dedent(text);
+    this._slotText = String(text).trim();
     this.requestUpdate();
-  }
-
-  // Dedent helper for nicely indented HTML content
-  _dedent(str = "") {
-    const s = String(str).replace(/\r\n/g, "\n");
-    const lines = s.replace(/^\n+|\n+$/g, "").split("\n");
-    const indents = lines
-      .filter((l) => l.trim().length)
-      .map((l) => (l.match(/^\s*/)?.[0].length ?? 0));
-    const min = indents.length ? Math.min(...indents) : 0;
-    return lines.map((l) => l.slice(min)).join("\n");
   }
 
   _currentRole() {
@@ -259,24 +225,15 @@ export class ChatMessage extends LitElement {
 
   _currentContent() {
     // Priority: explicit prop `content` → message.content → slot text
-    if (this.content != null) return String(this.content);
+    if (this.content != null) return String(this.content).trim();
     const m = this.message ?? {};
-    if (m.content != null) return String(m.content);
+    if (m.content != null) return String(this.content).trim();
     return this._slotText || "";
-  }
-
-  _computeDisplayRaw() {
-    const raw = this._currentContent();
-    if (!this.truncate || this._expanded) return { raw, truncated: false };
-    if (typeof raw !== "string") return { raw: String(raw ?? ""), truncated: false };
-    if (raw.length <= this.maxChars) return { raw, truncated: false };
-    const cut = raw.slice(0, this.maxChars).replace(/[\s\n]+$/g, "");
-    return { raw: cut + "…", truncated: true };
   }
 
   render() {
     const role = this._currentRole();
-    const { raw: displayRaw, truncated } = this._computeDisplayRaw();
+    const displayRaw = this._currentContent();
     const useMarkdown = this.markdown && !this.plaintext;
 
     if (useMarkdown) {
@@ -289,15 +246,6 @@ export class ChatMessage extends LitElement {
         <div class="msg ${role}">
           <slot hidden @slotchange=${this._onSlotChange}></slot>
           <div class="md" @click=${this._onClickCopy}>${unsafeHTML(safe)}</div>
-          ${this.truncate
-            ? html`<div class="truncate-controls">
-                ${this._expanded
-                  ? html`<button class="toggle-btn" type="button" @click=${this._toggleExpand}>Less</button>`
-                  : truncated
-                  ? html`<button class="toggle-btn" type="button" @click=${this._toggleExpand}>More</button>`
-                  : null}
-              </div>`
-            : null}
         </div>
       `;
     }
@@ -322,18 +270,11 @@ export class ChatMessage extends LitElement {
       changed.has("plaintext") ||
       changed.has("enableCopy") ||
       changed.has("enableHighlight") ||
-      changed.has("role") ||
-      changed.has("truncate") ||
-      changed.has("maxChars") ||
-      changed.has("_expanded")
+      changed.has("role")
     ) {
       this._enhanceCodeBlocks();
     }
   }
-
-  _toggleExpand = () => {
-    this._expanded = !this._expanded;
-  };
 
   _enhanceCodeBlocks() {
     if (!this.markdown || this.plaintext) return;
