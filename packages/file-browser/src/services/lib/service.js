@@ -52,7 +52,7 @@ function makeDynamicWsResolver({
   extraIgnores = [],
   // NEW: can be true/false or a number for levels. If undefined, auto-detect.
   preferShallow,
-  shallowDepth = 2, // default shallow depth: 2 levels (packages/*/*/package.json)
+  shallowDepth = 3, // default shallow depth: 2 levels (packages/*/*/package.json)
 } = {}) {
   const resolvedRoot = path.resolve(root);
 

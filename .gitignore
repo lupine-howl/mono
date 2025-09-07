@@ -38,6 +38,6 @@ Thumbs.db
 *.swn
 
 # Optional lockfiles (if you don’t want them in repo)
-# package-lock.json
+package-lock.json
 # yarn.lock
 # pnpm-lock.yaml

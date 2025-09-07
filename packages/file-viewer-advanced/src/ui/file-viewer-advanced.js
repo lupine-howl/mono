@@ -8,6 +8,7 @@ import "./md-viewer.js";
 import "./html-preview.js";
 import "./json-tree-viewer.js";
 import "./package-viewer.js";
+import "./image-viewer.js";
 
 export class FileViewerAdvanced extends LitElement {
   static styles = css`
@@ -31,7 +32,7 @@ export class FileViewerAdvanced extends LitElement {
 
   static properties = {
     readOnly: { type: Boolean, attribute: "read-only" },
-    /** "auto" (default) | "bundle" | "md" | "csv" | "html" | "json" | "code" */
+    /** "auto" (default) | "bundle" | "md" | "csv" | "html" | "json" | "code" | "image" */
     type: { type: String },
 
     // internal state
@@ -147,6 +148,10 @@ export class FileViewerAdvanced extends LitElement {
       //.readOnly=${this.readOnly}
       //></json-tree-viewer>
       //</div>`;
+      case "image":
+        return html`<div class="wrap">
+          <image-viewer .ws=${this._ws} .path=${this._path}></image-viewer>
+        </div>`;
       case "cm":
       default:
         return html`<div class="wrap">
@@ -196,9 +201,13 @@ export class FileViewerAdvanced extends LitElement {
         this._resolved = "bundle";
       } else {
         const ext = (this._path.split(".").pop() || "").toLowerCase();
+        const isImageExt = [
+          "png","jpg","jpeg","gif","webp","bmp","svg","ico","tif","tiff","avif"
+        ].includes(ext);
         if (["md", "markdown", "mdx"].includes(ext)) this._resolved = "md";
         else if (ext === "csv") this._resolved = "csv";
         else if (["html", "htm", "css"].includes(ext)) this._resolved = "html";
+        else if (isImageExt || (this._mime || "").startsWith("image/")) this._resolved = "image";
         else if (
           ext === "json" ||
           (this._mime || "").includes("application/json")
