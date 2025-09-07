@@ -1,27 +1,42 @@
 <!doctype html>
 <html>
   <head>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#111111">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Leeeeeeeeeeo</title>
 
-<!-- iOS: make it launch full screen from Home Screen -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">    <title>Tasks Toolkit Demo</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>html,body{height:100%;margin:0;background:#0a0a0b;color:#e7e7ea;font-family: ui-sans-serif, system-ui;}</style>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#111111">
+
+    <!-- iOS full-screen niceties -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+    <style>
+      html,body{height:100%;margin:0;background:#0a0a0b;color:#e7e7ea;font-family:ui-sans-serif,system-ui;}
+    </style>
   </head>
   <body>
     <app-root></app-root>
     <script type="module" src="./app.js"></script>
-    <script type="module">
-      const ws = new WebSocket(`ws://${location.hostname}:35729`);
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data || "{}");
-          if (msg.type === "reload") location.reload();
-        } catch {}
-      };
+
+    <script>
+      // Register the service worker from the site root for scope "/"
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      }
+
+      // Dev-only livereload (avoid on HTTPS prod)
+      if (location.hostname === 'localhost') {
+        const ws = new WebSocket(`ws://${location.hostname}:35729`);
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data || "{}");
+            if (msg.type === "reload") location.reload();
+          } catch {}
+        };
+      }
     </script>
   </body>
 </html>
