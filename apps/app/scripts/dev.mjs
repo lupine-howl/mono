@@ -34,7 +34,7 @@ function ensureIndexHtml() {
 }
 
 (async () => {
-  ensureIndexHtml();
+  //ensureIndexHtml();
 
   // Static dev server
   const app = createServer((req, res) => {

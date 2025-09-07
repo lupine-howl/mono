@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build": "npm i && npm run ex:copy && npm run ex:client && npm run ex:server",
-    "ex:copy": "rm -rf dist && mkdir -p dist/public && cp -R src/index.html dist/public/",
+    "ex:copy": "rm -rf dist && mkdir -p dist/public && cp -R src/public/* dist/public/",
     "ex:client": "esbuild src/app.js --format=esm --bundle --platform=browser --packages=external --outdir=dist/public --log-level=info",
     "ex:server": "esbuild src/server.mjs --format=esm --bundle --platform=node --packages=external --outfile=dist/server.mjs",
     "start": "npm run build && node dist/server.mjs",
