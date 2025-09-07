@@ -3,8 +3,9 @@ import { DEFAULT_WORKSPACES, DEFAULT_SNAPSHOT_IGNORES } from "./constants.js";
 import path from "node:path";
 
 export function registerFsTools(tools, { logEntry } = {}) {
+  const root = path.resolve(process.cwd(), "../../");
   const svc = createFsService({
-    root: "/home/loki/dev/mono",
+    root,
   });
 
   // ---- Download (binary-safe) -----------------------------------------------
