@@ -25,6 +25,7 @@
     "@loki/self-code-test": "../../packages/self-code-test",
     "@loki/template": "../../packages/template",
     "@loki/calendar": "../../packages/calendar",
+    "@loki/git": "../../packages/git",
     "lit": "^3.3.1"
   },
   "devDependencies": {

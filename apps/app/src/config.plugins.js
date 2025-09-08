@@ -12,4 +12,5 @@ export default [
   () => import("@loki/terminal/plugin").then((m) => m.default),
   () => import("@loki/template/plugin").then((m) => m.default),
   () => import("@loki/calendar/plugin").then((m) => m.default),
+  () => import("@loki/git/plugin").then((m) => m.default),
 ];
