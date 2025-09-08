@@ -2,6 +2,7 @@
 import { html } from "lit";
 import "@loki/minihttp/ui/tool-select.js";
 import "@loki/minihttp/ui/tool-viewer.js";
+import "@loki/minihttp/ui/tool-directory.js";
 
 export default ({ components }) => {
   components.push({
@@ -11,6 +12,12 @@ export default ({ components }) => {
         label: "📁 Tools",
         order: 30,
         render: () => html`<tool-viewer></tool-viewer>`,
+      },
+      {
+        id: `tool-directory`,
+        label: "🧰 Tool Directory",
+        order: 31,
+        render: () => html`<tool-directory></tool-directory>`,
       },
     ],
     sidebar: [
