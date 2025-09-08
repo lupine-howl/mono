@@ -51,7 +51,6 @@ export class GitCommit extends LitElement {
     _ws: { state: true },
     _subject: { state: true },
     _body: { state: true },
-    _stageAll: { state: true },
     _loading: { state: true },
     _msg: { state: true },
   };
@@ -62,7 +61,6 @@ export class GitCommit extends LitElement {
     this._ws = this.controller.ws || "";
     this._subject = "";
     this._body = "";
-    this._stageAll = false;
     this._loading = false;
     this._msg = "";
     this._onChange = (e) => {
@@ -81,14 +79,6 @@ export class GitCommit extends LitElement {
           .value=${this._subject}
           @input=${(e) => (this._subject = e.target.value)}
         />
-        <label class="hint"
-          ><input
-            type="checkbox"
-            .checked=${this._stageAll}
-            @change=${(e) => (this._stageAll = e.target.checked)}
-          />
-          stage all</label
-        >
         <button
           class="btn"
           @click=${this._doCommit}
@@ -112,7 +102,8 @@ export class GitCommit extends LitElement {
     this._loading = true;
     this._msg = "";
     try {
-      if (this._stageAll) await gitAdd({ ws: this._ws, all: true });
+      // Auto-stage everything before committing (no manual staging overhead)
+      await gitAdd({ ws: this._ws, all: true });
       const res = await gitCommit({
         ws: this._ws,
         subject: this._subject,

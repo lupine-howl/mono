@@ -1,7 +1,8 @@
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "@loki/file-browser/util";
-import { gitStatus, gitAdd, gitRestore } from "../shared/gitClient.js";
+import { gitStatus } from "../shared/gitClient.js";
 
+// Simplified changes viewer (no staging). Untracked files are hidden.
 export class GitStaged extends LitElement {
   static styles = css`
     :host {
@@ -16,11 +17,6 @@ export class GitStaged extends LitElement {
     .hint {
       font-size: 12px;
       opacity: 0.7;
-    }
-    .cols {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
     }
     .pane {
       border: 1px solid #1f1f22;
@@ -61,9 +57,7 @@ export class GitStaged extends LitElement {
     _ws: { state: true },
     _loading: { state: true },
     _err: { state: true },
-    _staged: { state: true },
-    _unstaged: { state: true },
-    _untracked: { state: true },
+    _changes: { state: true },
     _branch: { state: true },
     _ahead: { state: true },
     _behind: { state: true },
@@ -75,9 +69,7 @@ export class GitStaged extends LitElement {
     this._ws = this.controller.ws || "";
     this._loading = false;
     this._err = null;
-    this._staged = [];
-    this._unstaged = [];
-    this._untracked = [];
+    this._changes = [];
     this._branch = "";
     this._ahead = 0;
     this._behind = 0;
@@ -97,16 +89,14 @@ export class GitStaged extends LitElement {
     this._fetch();
   }
 
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.controller.removeEventListener?.("files:change", this._onChange);
+  }
+
   render() {
     return html`
       <div class="bar">
-        <button
-          class="btn"
-          @click=${() => this._addAll()}
-          ?disabled=${!this._ws}
-        >
-          Stage all
-        </button>
         <button
           class="btn"
           @click=${() => this._fetch()}
@@ -119,32 +109,18 @@ export class GitStaged extends LitElement {
             ? `branch: ${this._branch} (+${this._ahead}/-${this._behind})`
             : ""}</span
         >
+        <span class="hint" style="margin-left:auto;">Shows tracked changes only</span>
       </div>
       ${this._err ? html`<div class="hint">${this._err}</div>` : ""}
-      <div class="cols">
-        ${this._renderPane("Staged", this._staged, (p) => this._unstage(p))}
-        ${this._renderPane("Unstaged", this._unstaged, (p) => this._stage(p))}
-        ${this._renderPane("Untracked", this._untracked, (p) => this._stage(p))}
+      <div class="pane">
+        <h4>Changes</h4>
+        <ul>
+          ${this._changes.length
+            ? this._changes.map((p) => html`<li><span>${p}</span></li>`)
+            : html`<li class="hint">(no tracked changes)</li>`}
+        </ul>
       </div>
     `;
-  }
-
-  _renderPane(title, list, onClick) {
-    return html`<div class="pane">
-      <h4>${title}</h4>
-      <ul>
-        ${list.length
-          ? list.map(
-              (p) =>
-                html`<li>
-                  <button class="btn" @click=${() => onClick(p)}>
-                    ${title === "Staged" ? "Unstage" : "Stage"}</button
-                  ><span>${p}</span>
-                </li>`
-            )
-          : html`<li class="hint">(empty)</li>`}
-      </ul>
-    </div>`;
   }
 
   async _fetch() {
@@ -153,9 +129,11 @@ export class GitStaged extends LitElement {
     this._err = null;
     try {
       const j = await gitStatus({ ws: this._ws });
-      this._staged = j.staged || [];
-      this._unstaged = j.unstaged || [];
-      this._untracked = j.untracked || [];
+      // Combine staged + unstaged so users still see pending changes even if staged externally.
+      const staged = Array.isArray(j?.staged) ? j.staged : [];
+      const unstaged = Array.isArray(j?.unstaged) ? j.unstaged : [];
+      const set = new Set([...unstaged, ...staged]);
+      this._changes = Array.from(set);
       this._branch = j.branch || "";
       this._ahead = j.ahead || 0;
       this._behind = j.behind || 0;
@@ -164,22 +142,6 @@ export class GitStaged extends LitElement {
     } finally {
       this._loading = false;
     }
-  }
-
-  async _addAll() {
-    if (!this._ws) return;
-    await gitAdd({ ws: this._ws, all: true });
-    await this._fetch();
-  }
-
-  async _stage(p) {
-    await gitAdd({ ws: this._ws, paths: [p] });
-    await this._fetch();
-  }
-
-  async _unstage(p) {
-    await gitRestore({ ws: this._ws, paths: [p], stagedOnly: true });
-    await this._fetch();
   }
 }
 

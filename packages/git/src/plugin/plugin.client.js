@@ -4,6 +4,7 @@ import "@loki/file-browser/ui/workspace-select.js";
 import "../ui/git-staged.js";
 import "../ui/git-commit.js";
 import "../ui/git-history.js";
+import "../ui/git-sync.js";
 
 export default ({ components }) => {
   const ns = "git";
@@ -28,6 +29,12 @@ export default ({ components }) => {
         label: "📁 Workspaces",
         order: 10,
         render: () => html`<workspace-select></workspace-select>`,
+      },
+      {
+        id: `${ns}:sync`,
+        label: "🔁 Sync",
+        order: 12,
+        render: () => html`<git-sync></git-sync>`,
       },
       {
         id: `${ns}:staged`,

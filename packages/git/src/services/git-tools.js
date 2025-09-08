@@ -36,6 +36,12 @@ async function ensureRepo(cwd) {
   return true;
 }
 
+async function currentBranch(cwd) {
+  const r = await runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (!r.ok) throw new Error(r.error || "Failed to get current branch");
+  return r.stdout.trim();
+}
+
 function parsePorcelain(txt) {
   // Very simple parser for `git status --porcelain`
   const lines = (txt || "").split(/\r?\n/).filter(Boolean);
@@ -314,6 +320,55 @@ export function registerGitTools(tools, { root } = {}) {
       const cwd = await getCwd(ws);
       const r = await runGit(cwd, ["checkout", name]);
       return r.ok ? { ok: true } : { error: r.error };
+    },
+    tags: ["GIT"],
+  });
+
+  // New: push and pull
+  tools.define({
+    name: "gitPush",
+    description:
+      "Push the current branch to a remote (default: origin). Optionally specify branch.",
+    parameters: {
+      type: "object",
+      required: ["ws"],
+      properties: {
+        ws: { type: "string" },
+        remote: { type: "string", default: "origin" },
+        branch: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+    handler: async ({ ws, remote = "origin", branch }) => {
+      const cwd = await getCwd(ws);
+      const br = branch && branch.trim() ? branch : await currentBranch(cwd);
+      const r = await runGit(cwd, ["push", remote, br]);
+      return r.ok ? { ok: true, output: r.stdout } : { error: r.error };
+    },
+    tags: ["GIT"],
+  });
+
+  tools.define({
+    name: "gitPull",
+    description:
+      "Pull from remote (default origin) for current branch. rebase=true by default.",
+    parameters: {
+      type: "object",
+      required: ["ws"],
+      properties: {
+        ws: { type: "string" },
+        remote: { type: "string", default: "origin" },
+        branch: { type: "string" },
+        rebase: { type: "boolean", default: true },
+      },
+      additionalProperties: false,
+    },
+    handler: async ({ ws, remote = "origin", branch, rebase = true }) => {
+      const cwd = await getCwd(ws);
+      const br = branch && branch.trim() ? branch : await currentBranch(cwd);
+      const args = ["pull", ...(rebase ? ["--rebase"] : ["--ff-only"]), remote, br];
+      const r = await runGit(cwd, args, { timeout: 300000 });
+      return r.ok ? { ok: true, output: r.stdout } : { error: r.error };
     },
     tags: ["GIT"],
   });

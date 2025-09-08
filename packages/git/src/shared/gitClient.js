@@ -12,3 +12,5 @@ export const gitLog = rpc.gitLog;
 export const gitDiff = rpc.gitDiff;
 export const gitBranchList = rpc.gitBranchList;
 export const gitCheckout = rpc.gitCheckout;
+export const gitPush = rpc.gitPush;
+export const gitPull = rpc.gitPull;
