@@ -16,6 +16,8 @@ export class AppMain extends LitElement {
       flex: 0 0 auto;
       position: fixed;
       z-index: 1;
+      max-width: 800px;
+      width: calc(100%);
     }
     .body {
       flex: 1 1 auto;
@@ -25,10 +27,10 @@ export class AppMain extends LitElement {
       padding-bottom: 110px;
     }
     .composer {
-      flex: 0 0 auto; /* sticks to bottom */
-      position: fixed;
+      position:fixed;
       bottom: 0;
-      width: 800px;
+      max-width: 800px;
+      width: calc(100%);
     }
 
     ::slotted([slot="header"]) {
