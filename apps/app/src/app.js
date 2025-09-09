@@ -1,5 +1,5 @@
 // examples/src/app.js
-import { BasePluggableApp } from "@loki/layout/ui/BasePluggableApp.js";
+import { GithubPluggableApp } from "@loki/layout/ui/GithubPluggableApp.js";
 import plugins from "./config.plugins.js";
 
 const config = { components: [] };
@@ -9,7 +9,7 @@ for (const load of plugins) {
   install?.(config);
 }
 
-export class App extends BasePluggableApp {
+export class App extends GithubPluggableApp {
   getPlugins() {
     return config.components;
   }

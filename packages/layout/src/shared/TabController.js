@@ -4,6 +4,7 @@ import { tabService } from "./TabService.js";
 export class TabController extends EventTarget {
   constructor(host = null) {
     super();
+
     this.host = null;
     if (host?.addController) {
       this.host = host;
@@ -11,17 +12,19 @@ export class TabController extends EventTarget {
     }
 
     this._service = tabService;
-    this.state = this._service.get();
     this._unsub = null;
 
-    // ✅ Only auto-subscribe when NOT host-bound
-    if (!this.host) this._subscribe();
+    // Subscribe immediately so constructor-time setTabs() is reflected.
+    this._subscribe();
 
-    // fire an initial snapshot for any outside listeners
-    this._emit({});
+    // Keep a local snapshot, but don't trust it for reads (get() proxies service).
+    this.state = this._service.get();
+
+    // Fire an initial snapshot for any external listeners.
+    this._emit({ type: "init" });
   }
 
-  // Lit lifecycle (will run only if host-bound)
+  // Lit lifecycle (runs only if host-bound)
   hostConnected() {
     this._subscribe();
   }
@@ -37,11 +40,15 @@ export class TabController extends EventTarget {
       this._emit(patch);
       this.host?.requestUpdate?.();
     });
+    // In case subscribe doesn't immediately push current state:
+    this.state = this._service.get();
+    this._emit({ type: "sync" });
+    this.host?.requestUpdate?.();
   }
 
   _emit(patch = {}) {
     this.dispatchEvent(
-      new CustomEvent("change", { detail: { state: this.state, patch } })
+      new CustomEvent("change", { detail: { state: this.get(), patch } })
     );
   }
   subscribe(fn) {
@@ -54,15 +61,47 @@ export class TabController extends EventTarget {
   get service() {
     return this._service;
   }
+
+  // Always read fresh state from the service to avoid stale snapshots.
   get() {
-    return this.state;
+    return this._service.get();
   }
 
-  // pass-throughs
-  setTabs = (items) => this._service.setTabs(items);
-  setActive = (id) => this._service.setActive(id);
-  addTab = (t) => this._service.addTab(t);
-  removeTab = (id) => this._service.removeTab(id);
-  next = () => this._service.next();
-  prev = () => this._service.prev();
+  // pass-throughs + force refresh so host re-renders immediately
+  setTabs = (items) => {
+    const r = this._service.setTabs(items);
+    this._postOp("setTabs");
+    return r;
+  };
+  setActive = (id) => {
+    const r = this._service.setActive(id);
+    this._postOp("setActive");
+    return r;
+  };
+  addTab = (t) => {
+    const r = this._service.addTab(t);
+    this._postOp("addTab");
+    return r;
+  };
+  removeTab = (id) => {
+    const r = this._service.removeTab(id);
+    this._postOp("removeTab");
+    return r;
+  };
+  next = () => {
+    const r = this._service.next();
+    this._postOp("next");
+    return r;
+  };
+  prev = () => {
+    const r = this._service.prev();
+    this._postOp("prev");
+    return r;
+  };
+
+  _postOp(op) {
+    this.state = this._service.get();
+    this._emit({ op });
+    this.host?.requestUpdate?.();
+  }
 }
