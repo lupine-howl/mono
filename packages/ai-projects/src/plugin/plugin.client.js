@@ -1,5 +1,8 @@
 // src/ui/plugin.js
 import { html } from "lit";
+import "@loki/ai-chat/ui/chat-stream.js";
+import "@loki/ai-chat/ui/chat-composer.js";
+import "@loki/ai-chat/ui/model-select.js";
 import "@loki/ai-projects/ui/project-list.js";
 import "@loki/ai-projects/ui/conversation-list.js";
 import "@loki/ai-projects/ui/project-viewer.js";
@@ -7,18 +10,14 @@ import "@loki/ai-projects/ui/project-viewer.js";
 export default ({ components }) => {
   const ns = "chat-project";
   components.push({
-    sidebar: [
+    composer: [
       {
-        id: `${ns}:projects`,
-        label: "Projects",
-        order: 2,
-        render: () => html`<project-list></project-list>`,
-      },
-      {
-        id: `${ns}:conversations`,
-        label: "Chats",
-        order: 2,
-        render: () => html`<chat-conversation-list></chat-conversation-list>`,
+        id: `${ns}:composer`,
+        label: "Composer",
+        order: 100,
+        render: () => {
+          return html` <chat-composer></chat-composer> `;
+        },
       },
     ],
     body: [
@@ -27,6 +26,55 @@ export default ({ components }) => {
         label: "📁 Project",
         order: 2,
         render: () => html`<project-viewer></project-viewer>`,
+        left: [
+          {
+            id: `${ns}:model`,
+            label: "🤖 Model",
+            order: 10,
+            render: () => html`<model-select></model-select>`,
+          },
+
+          {
+            id: `${ns}:projects`,
+            label: "Projects",
+            order: 2,
+            render: () => html`<project-list></project-list>`,
+          },
+          {
+            id: `${ns}:conversations`,
+            label: "Chats",
+            order: 2,
+            render: () =>
+              html`<chat-conversation-list></chat-conversation-list>`,
+          },
+        ],
+      },
+      {
+        id: `${ns}:stream`,
+        label: "💬 Chat",
+        order: 2,
+        render: () => html`<chat-stream></chat-stream>`,
+        left: [
+          {
+            id: `${ns}:model`,
+            label: "🤖 Model",
+            order: 10,
+            render: () => html`<model-select></model-select>`,
+          },
+          {
+            id: `${ns}:projects`,
+            label: "Projects",
+            order: 2,
+            render: () => html`<project-list></project-list>`,
+          },
+          {
+            id: `${ns}:conversations`,
+            label: "Chats",
+            order: 2,
+            render: () =>
+              html`<chat-conversation-list></chat-conversation-list>`,
+          },
+        ],
       },
     ],
   });

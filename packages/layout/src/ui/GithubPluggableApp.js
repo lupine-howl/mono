@@ -44,7 +44,7 @@ export class GithubPluggableApp extends LitElement {
 
       --appbar-h1: 48px; /* branding row height */
       --appbar-h2: 44px; /* tabs row height */
-      --sec-side: 260px; /* secondary (inline) sidebar width */
+      --sec-side: 300px; /* secondary (inline) sidebar width */
       --main-max: 1200px; /* optional cap for inner content */
 
       display: block;
@@ -98,33 +98,35 @@ export class GithubPluggableApp extends LitElement {
     }
 
     .tabs-row {
-      height: var(--appbar-h2);
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 12px;
-      border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
       position: sticky; /* sticks under brand row if it scrolls */
       top: var(--appbar-h1);
       background: var(--bg);
       z-index: 41;
+      padding-bottom: 0;
+      padding-left: 6px;
     }
     .tab {
       appearance: none;
-      border: 1px solid #232327;
-      background: #121214;
+      border: none;
+      background: transparent;
       color: #cfcfd4;
-      font: inherit;
-      padding: 6px 10px;
-      border-radius: 8px;
+      font: 0.9rem system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
+      border: 1px solid transparent;
+      padding: 12px;
       cursor: pointer;
       opacity: 0.95;
       white-space: nowrap;
+      padding-top: 0;
     }
     .tab[aria-selected="true"] {
-      border-color: #3b3b42;
-      background: #16161a;
+      border-bottom: 2px solid #8247ff;
+      font-weight: 600;
+      color: #fff;
       opacity: 1;
     }
     .tabs-empty {
@@ -152,7 +154,6 @@ export class GithubPluggableApp extends LitElement {
 
     .main {
       min-width: 0;
-      padding: 16px;
     }
     .main-inner {
       max-width: var(--main-max);
@@ -164,6 +165,7 @@ export class GithubPluggableApp extends LitElement {
       display: grid;
       gap: 12px;
       min-height: 40vh;
+      padding: 16px;
     }
     h3 {
       margin: 0;
@@ -175,7 +177,7 @@ export class GithubPluggableApp extends LitElement {
       position: fixed;
       inset: 0;
       display: grid;
-      grid-template-columns: 320px 1fr; /* drawer + scrim */
+      grid-template-columns: 300px 1fr; /* drawer + scrim */
       z-index: 100;
       pointer-events: none; /* enable only when open */
     }
@@ -212,10 +214,7 @@ export class GithubPluggableApp extends LitElement {
       padding: 12px;
     }
     .card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
       padding: 12px;
-      background: #101014;
     }
     .sidebar label {
       font-size: 12px;
@@ -241,7 +240,9 @@ export class GithubPluggableApp extends LitElement {
 
     /* Optional composer anchored to bottom of main column */
     .composer {
-      position: sticky;
+      position: fixed;
+      left: var(--sec-side);
+      right: 0;
       bottom: 0;
       background: linear-gradient(
         to top,
@@ -253,9 +254,15 @@ export class GithubPluggableApp extends LitElement {
 
     /* Responsive: collapse secondary sidebar on small screens */
     @media (max-width: 900px) {
-      .workspace {
-        grid-template-columns: 0 minmax(0, 1fr);
+      .composer {
+        left: 0;
       }
+      .main {
+        position: absolute;
+        left: 0;
+        right: 0;
+      }
+
       .sec-sidebar {
         display: none;
       }
@@ -327,6 +334,18 @@ export class GithubPluggableApp extends LitElement {
     );
   }
 
+  renderSidebar(sidebar) {
+    return sidebar.map(
+      ({ label, render, wrapperStyle }) => html`
+        <div class=${wrapperStyle || "card"}>
+          <h3>${label}</h3>
+          ${render?.({ controllers: this.controllers }) ??
+          html`<div style="opacity:.7">No content.</div>`}
+        </div>
+      `
+    );
+  }
+
   renderDrawer() {
     return html`
       <div
@@ -334,17 +353,7 @@ export class GithubPluggableApp extends LitElement {
         @click=${this._closeDrawer}
       >
         <aside class="drawer sidebar" @click=${(e) => e.stopPropagation()}>
-          <div class="sidebar-wrap">
-            ${this.ui.sidebar.map(
-              ({ label, render, wrapperStyle }) => html`
-                <div class=${wrapperStyle || "card"}>
-                  <h3>${label}</h3>
-                  ${render?.({ controllers: this.controllers }) ??
-                  html`<div style="opacity:.7">No content.</div>`}
-                </div>
-              `
-            )}
-          </div>
+          <div class="sidebar-wrap">${this.renderSidebar(this.ui.sidebar)}</div>
         </aside>
         <div class="scrim"></div>
       </div>
@@ -354,16 +363,13 @@ export class GithubPluggableApp extends LitElement {
   render() {
     const { active = "" } = this.tabController.get() || {};
     const body = this.ui.body.find((i) => i.id === active) ?? this.ui.body[0];
+    let left = body?.left || [];
 
     return html`
       <!-- App Bar -->
       <header class="appbar">
         <div class="brand-row">
           <div class="brand">
-            <span class="dot" aria-hidden="true"></span>
-            <span>${this.title}</span>
-          </div>
-          <div class="app-actions">
             <button
               class="icon-btn"
               @click=${this._toggleDrawer}
@@ -371,7 +377,10 @@ export class GithubPluggableApp extends LitElement {
             >
               ☰
             </button>
+            <span class="dot" aria-hidden="true"></span>
+            <span>${this.title}</span>
           </div>
+          <div class="app-actions"></div>
         </div>
         <div class="tabs-row" role="tablist" aria-label="Main content tabs">
           ${this.renderTabs()}
@@ -380,9 +389,7 @@ export class GithubPluggableApp extends LitElement {
 
       <!-- Workspace -->
       <div class="workspace">
-        <aside class="sec-sidebar">
-          <div class="placeholder">Secondary sidebar</div>
-        </aside>
+        <aside class="sec-sidebar">${this.renderSidebar(left)}</aside>
 
         <main class="main">
           <div class="main-inner">

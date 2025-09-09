@@ -22,6 +22,8 @@ export class GitStaged extends LitElement {
       border: 1px solid #1f1f22;
       border-radius: 10px;
       background: #0f0f12;
+      overflow: hidden;
+      overflow-x: auto;
     }
     .pane h4 {
       margin: 0;
@@ -109,7 +111,9 @@ export class GitStaged extends LitElement {
             ? `branch: ${this._branch} (+${this._ahead}/-${this._behind})`
             : ""}</span
         >
-        <span class="hint" style="margin-left:auto;">Shows tracked changes only</span>
+        <span class="hint" style="margin-left:auto;"
+          >Shows tracked changes only</span
+        >
       </div>
       ${this._err ? html`<div class="hint">${this._err}</div>` : ""}
       <div class="pane">

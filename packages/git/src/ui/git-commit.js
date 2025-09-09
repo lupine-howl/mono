@@ -23,7 +23,7 @@ export class GitCommit extends LitElement {
       font: inherit;
     }
     .area {
-      width: 100%;
+      width: calc(100% - 20px);
       min-height: 120px;
       padding: 8px 10px;
       border: 1px solid #2a2a30;

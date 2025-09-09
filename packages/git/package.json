@@ -42,6 +42,7 @@
     "@loki/http-base": "../http-base",
     "@loki/utilities": "../utilities",
     "@loki/file-browser": "../file-browser",
+    "@loki/file-viewer-advanced": "../file-viewer-advanced",
     "@loki/ai-projects": "../ai-projects"
   },
   "peerDependencies": {
