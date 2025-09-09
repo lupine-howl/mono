@@ -1,3 +1,4 @@
+// tooling-http-server.mjs
 import { createToolRegistry } from "./toolRegistry.js";
 import { MiniHttpServer } from "@loki/http-base";
 
@@ -5,26 +6,34 @@ export class ToolingHttpServer extends MiniHttpServer {
   constructor({
     rpcPrefix = "/rpc",
     openApiPath = "/openapi.json",
-    addRoutes = null, // (router, tools) => void
     ...baseOpts
   } = {}) {
     super(baseOpts);
-
     this.tools = createToolRegistry();
+    this.rpcPrefix = rpcPrefix;
+    this.openApiPath = openApiPath;
+  }
 
-    // Optional extra tool-defined routes
+  // Explicit async init so we can await addRoutes
+  async init({ addRoutes } = {}) {
     if (typeof addRoutes === "function") {
-      addRoutes({ router: this.router, tools: this.tools });
+      await addRoutes({ router: this.router, tools: this.tools });
     }
 
-    // Attach tools
-    this.tools.attach(this.router, { prefix: rpcPrefix });
-    this.tools.mountOpenApi(this.router, openApiPath, { prefix: rpcPrefix });
+    // Attach only after tools are fully registered
+    this.tools.attach(this.router, { prefix: this.rpcPrefix });
+    this.tools.mountOpenApi(this.router, this.openApiPath, {
+      prefix: this.rpcPrefix,
+    });
+
+    return this;
   }
 }
 
-export function createServer(opts = {}) {
-  const srv = new ToolingHttpServer(opts).listen();
+export async function createServer(opts = {}) {
+  const srv = new ToolingHttpServer(opts);
+  await srv.init(opts); // 🔴 await addRoutes work (plugins, tool regs, etc.)
+  srv.listen(); // start listening only after routes are mounted
   return {
     server: srv.server,
     router: srv.router,

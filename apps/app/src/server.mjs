@@ -9,19 +9,18 @@ const config = {
   schemas: {},
   regFunctions: {},
 };
-
-for (const load of plugins) {
-  const install = await load();
-  install?.(config);
-}
-
 createServer({
   baseDir: new URL("./public", import.meta.url).pathname,
-  addRoutes: ({ tools, router }) => {
+  addRoutes: async ({ tools, router }) => {
+    for (const load of plugins) {
+      const install = await load();
+      if (install) await install?.({ ...config, tools, router });
+    }
     registerDbTools(tools, {
       dbPath: path.resolve(process.cwd(), "data", "app.db"),
       schemas: config.schemas,
     });
+    //console.log(config);
     for (const [key, fn] of Object.entries(config.regFunctions)) {
       fn({ tools, router });
     }

@@ -1,4 +1,5 @@
-// openapi-rpc-client.js
+import { getGlobalSingleton } from "@loki/utilities";
+
 export function createOpenApiRpcClient({
   base = typeof location !== "undefined"
     ? location.origin
@@ -213,4 +214,14 @@ export function createOpenApiRpcClient({
   );
 
   return rpc; // not a Promise; no await needed
+}
+
+// ---- singleton helpers ----
+export function getRpcClient(opts = {}) {
+  const KEY = Symbol.for("@loki/minihttp:rpc-client");
+  return getGlobalSingleton(KEY, () => createOpenApiRpcClient());
+}
+export const rpc = getRpcClient();
+export function callTool(name, args) {
+  rpc.doCall(name, args);
 }

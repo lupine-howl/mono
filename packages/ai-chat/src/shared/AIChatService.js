@@ -1,17 +1,10 @@
 // src/shared/services/ai-chat/AIChatService.js
 import { createLogger } from "@loki/http-base/util";
-import { createOpenApiRpcClient } from "@loki/minihttp/util";
 import { toolsService } from "@loki/minihttp/util";
-import { MAX_TURNS } from "./constants.js";
 import { loadPrefs, savePrefs } from "./prefs.js";
-import { buildChatMessages } from "./buildMessages.js"; // if needed externally
 import { getGlobalSingleton } from "@loki/utilities";
 
-import {
-  pushMessage,
-  updateMessage,
-  syncMessages as syncMessagesFn,
-} from "./persistence.js";
+import { syncMessages as syncMessagesFn } from "./persistence.js";
 import * as del from "./deletions.js";
 import * as tools from "./tools.js";
 import { submit as submitFn } from "./submit.js";
@@ -36,19 +29,9 @@ export class AIChatService extends EventTarget {
         (typeof location !== "undefined" ? location.origin : ""),
     };
 
-    this.rpc =
-      opts.rpc ??
-      (this.persist.enabled
-        ? createOpenApiRpcClient({
-            base: this.persist.base,
-            openapiUrl: this.persist.openapiUrl,
-          })
-        : null);
-
     // ----- state -----
     this.state = {
       aiEndpoint: opts.aiEndpoint ?? "/api/ai",
-      rpcBase: opts.rpcBase ?? "/rpc",
 
       model: "o4-mini",
       persona: "You are a helpful assistant.",
@@ -198,9 +181,6 @@ export class AIChatService extends EventTarget {
   }
   setAiEndpoint(url) {
     this.set({ aiEndpoint: String(url || "/api/ai") });
-  }
-  setRpcBase(url) {
-    this.set({ rpcBase: String(url || "/rpc") });
   }
 
   // ===== deletions (thin wrappers) =====
