@@ -3,6 +3,7 @@ import { LitElement, html, css } from "lit";
 import "@loki/layout/ui/smart-select.js";
 import { sideWidgetStyles } from "./sideWidgetStyles";
 import { AIProjectController } from "../shared/AIProjectController.js";
+import { TabController } from "@loki/layout/util";
 
 export class ProjectList extends LitElement {
   static styles = sideWidgetStyles;
@@ -20,6 +21,7 @@ export class ProjectList extends LitElement {
     super();
     // self-owned controller (singleton-backed service under the hood)
     this.controller = new AIProjectController(this);
+    this.tabController = new TabController(this);
 
     // local UI state
     const st = this.controller.get?.() || {};
@@ -101,6 +103,7 @@ export class ProjectList extends LitElement {
                   ${proj.archived ? "Unarchive" : "Archive"}
                 </option>
                 <option value="delete">Delete</option>
+                <option value="edit">Edit</option>
               </smart-select>
             `}
       </div>
@@ -176,6 +179,9 @@ export class ProjectList extends LitElement {
         if (this._editingId === id) this._cancelEdit();
       }
       return;
+    }
+    if (val === "edit") {
+      this.tabController.setActive("chat-project:project");
     }
   }
 }

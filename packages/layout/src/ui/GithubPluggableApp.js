@@ -44,7 +44,7 @@ export class GithubPluggableApp extends LitElement {
 
       /* Layout vars */
       --appbar-h: 48px;
-      --sec-side: 260px; /* secondary (inline) sidebar width on desktop */
+      --sec-side: 300px; /* secondary (inline) sidebar width on desktop */
       --main-max: 1200px;
       --composer-h: 72px; /* approximate height of composer (padding uses this) */
 
@@ -67,6 +67,7 @@ export class GithubPluggableApp extends LitElement {
       align-items: center;
       gap: 8px;
       padding: 0 10px;
+      z-index: 100;
     }
 
     .icon-btn {
@@ -129,21 +130,41 @@ export class GithubPluggableApp extends LitElement {
 
     /* ===== Workspace ===== */
     .workspace {
-      display: grid;
-      grid-template-columns: var(--sec-side) minmax(0, 1fr);
-      min-height: calc(100vh - var(--appbar-h));
     }
     .sec-sidebar {
       border-right: 1px solid var(--border);
       background: var(--panel);
       min-width: 0;
+      position: fixed;
+      top: var(--appbar-h);
+      left: 0;
+      width: var(--sec-side);
+      bottom: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
+      z-index: 99;
     }
     .sec-wrap {
       padding: 12px;
+      display: grid;
+      grid-auto-rows: max-content;
+      align-content: start;
+      gap: 12px;
+      grid-template-columns: 100%;
     }
 
     .main {
       min-width: 0;
+      position: absolute;
+      top: var(--appbar-h);
+      left: var(--sec-side);
+      right: 0;
+      bottom: 0;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
     }
     .main-inner {
       max-width: var(--main-max);
@@ -159,7 +180,6 @@ export class GithubPluggableApp extends LitElement {
     .content {
       display: grid;
       gap: 12px;
-      min-height: 40vh;
     }
     h3 {
       margin: 0;
@@ -171,7 +191,7 @@ export class GithubPluggableApp extends LitElement {
       position: fixed;
       inset: 0;
       display: grid;
-      grid-template-columns: 320px 1fr; /* drawer + scrim */
+      grid-template-columns: calc(var(--sec-side) + 1px) 1fr; /* drawer + scrim */
       z-index: 100;
       pointer-events: none; /* enable only when open */
     }

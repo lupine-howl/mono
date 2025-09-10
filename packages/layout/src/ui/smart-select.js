@@ -67,7 +67,7 @@ export class SmartSelect extends LitElement {
       padding-bottom: 6px;
     }
     :host(:hover) .more-button {
-      background: rgba(125, 125, 125, 0.2);
+      color: rgba(255, 0, 200, 0.66);
     }
   `;
 

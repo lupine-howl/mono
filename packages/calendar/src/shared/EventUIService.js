@@ -1,10 +1,11 @@
 import { getGlobalSingleton } from "@loki/utilities";
 import { getEventStore } from "./EventStore.js";
 import { dbSelect, dbInsert, dbUpdate, dbDelete } from "@loki/db/util";
+import { rpc } from "@loki/minihttp/util";
 
 function toEpoch(value) {
   if (value == null) return null;
-  if (typeof value === 'number') return value;
+  if (typeof value === "number") return value;
   const t = Date.parse(value);
   return Number.isFinite(t) ? t : null;
 }
@@ -14,6 +15,10 @@ export class EventUIService {
     this.table = table;
     this.pk = "id";
     this.store = getEventStore();
+    rpc.onCall("createEvent", ({ args: ev }) => {
+      console.log("createEvent received via RPC:", ev);
+      this.store.upsertOne(ev);
+    });
   }
 
   async list({ calendarId } = {}) {
@@ -30,7 +35,8 @@ export class EventUIService {
 
   async createOne(input) {
     const now = Date.now();
-    const id = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    const id =
+      globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
     const values = {
       id,
       title: String(input?.title ?? "Untitled").trim(),
@@ -57,8 +63,8 @@ export class EventUIService {
 
   async update(id, patch) {
     const normalized = { ...patch };
-    if ('start' in normalized) normalized.start = toEpoch(normalized.start);
-    if ('end' in normalized) normalized.end = toEpoch(normalized.end);
+    if ("start" in normalized) normalized.start = toEpoch(normalized.start);
+    if ("end" in normalized) normalized.end = toEpoch(normalized.end);
     normalized.updatedAt = Date.now();
     await dbUpdate({ table: this.table, id, patch: normalized });
     await this.list({ calendarId: patch?.calendarId });
@@ -71,6 +77,9 @@ export class EventUIService {
 }
 
 export function getEventUIService(opts = {}) {
-  return getGlobalSingleton(Symbol.for("@loki/calendar:ui-service@1"), () => new EventUIService(opts));
+  return getGlobalSingleton(
+    Symbol.for("@loki/calendar:ui-service@1"),
+    () => new EventUIService(opts)
+  );
 }
 export const eventUIService = getEventUIService();

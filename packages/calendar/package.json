@@ -19,6 +19,7 @@
   "dependencies": {
     "@loki/db": "../db",
     "@loki/utilities": "../utilities",
+    "@loki/minihttp": "../minihttp",
     "@fullcalendar/core": "^6.1.15",
     "@fullcalendar/daygrid": "^6.1.15",
     "@fullcalendar/timegrid": "^6.1.15",

@@ -9,7 +9,7 @@ export default [
   //() => import("@loki/ai-chat/plugin").then((m) => m.default),
   () => import("@loki/ai-projects/plugin").then((m) => m.default),
   () => import("@loki/ai-image-gen/plugin").then((m) => m.default),
-  () => import("@loki/terminal/plugin").then((m) => m.default),
+  //() => import("@loki/terminal/plugin").then((m) => m.default),
   //() => import("@loki/template/plugin").then((m) => m.default),
   () => import("@loki/calendar/plugin").then((m) => m.default),
   () => import("@loki/git/plugin").then((m) => m.default),
