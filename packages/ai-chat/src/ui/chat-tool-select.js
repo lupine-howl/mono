@@ -59,6 +59,7 @@ export class ChatToolSelect extends LitElement {
         ${mode !== "off"
           ? html`
               <tool-select
+                style="position:relative;bottom:4px;"
                 @tool-change=${(e) =>
                   this.controller.setToolName(e.detail.value)}
               ></tool-select>

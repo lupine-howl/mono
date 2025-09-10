@@ -52,17 +52,14 @@ export class ChatMessage extends LitElement {
     .msg {
       padding: 8px 14px;
       line-height: 1.5em;
-      border-radius: 28px;
       background: #303030;
       color: inherit;
       width: fit-content;
-      max-width: min(70ch, 75%);
       text-align: left;
       white-space: normal;
       justify-self: start;
     }
     .msg.user {
-      justify-self: end;
       background: #2f4f99;
     }
     .msg.assistant {

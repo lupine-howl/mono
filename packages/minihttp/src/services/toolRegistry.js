@@ -21,6 +21,7 @@ export function createToolRegistry({
   serverUrl = "/",
 } = {}) {
   const tools = new Map();
+  let broadcast = null; // NEW: server->client announcer
 
   function define({
     name,
@@ -88,14 +89,12 @@ export function createToolRegistry({
 
   // --- helpers your OpenAI bridge can use directly ---
   function list() {
-    // array of { name, description, parameters, handler, safe, tags }
     return Array.from(tools.values());
   }
   function find(name) {
     return tools.get(name) || null;
   }
   function toOpenAITools() {
-    // OpenAI-compliant tool array
     return list().map((t) => ({
       type: "function",
       function: {
@@ -125,6 +124,20 @@ export function createToolRegistry({
         const v = validate(t.parameters, args || {});
         if (!v.ok) return { status: 400, json: { error: v.error } };
         const result = await t.handler(v.value, ctx);
+
+        // NEW: announce after successful call
+        if (typeof broadcast === "function") {
+          try {
+            broadcast({
+              type: "tool:called",
+              name: t.name,
+              args: v.value,
+              ok: true,
+              at: Date.now(),
+            });
+          } catch {}
+        }
+
         return { status: 200, json: result ?? {} };
       });
 
@@ -134,6 +147,20 @@ export function createToolRegistry({
           const v = validate(t.parameters, args || {});
           if (!v.ok) return { status: 400, json: { error: v.error } };
           const result = await t.handler(v.value, ctx);
+
+          // NEW: announce safe call as well
+          if (typeof broadcast === "function") {
+            try {
+              broadcast({
+                type: "tool:called",
+                name: t.name,
+                args: v.value,
+                ok: true,
+                at: Date.now(),
+              });
+            } catch {}
+          }
+
           return { status: 200, json: result ?? {} };
         });
       }
@@ -151,7 +178,6 @@ export function createToolRegistry({
         responses: { 200: { description: "OK" } },
       };
       paths[p] ||= {};
-      // POST with JSON body = parameters
       paths[p].post = {
         ...base,
         requestBody: t.parameters
@@ -161,7 +187,6 @@ export function createToolRegistry({
             }
           : undefined,
       };
-      // GET with query params (safe only)
       if (t.safe) {
         const params = t.parameters?.properties
           ? Object.entries(t.parameters.properties).map(([name, schema]) => ({
@@ -190,6 +215,19 @@ export function createToolRegistry({
     router.get(path, () => ({ status: 200, json: toOpenApi({ prefix }) }));
   }
 
-  // expose helpers for bridges
-  return { define, attach, mountOpenApi, toOpenApi, list, find, toOpenAITools };
+  // NEW: allow server to inject a broadcaster
+  function setBroadcast(fn) {
+    broadcast = typeof fn === "function" ? fn : null;
+  }
+
+  return {
+    define,
+    attach,
+    mountOpenApi,
+    toOpenApi,
+    list,
+    find,
+    toOpenAITools,
+    setBroadcast,
+  };
 }

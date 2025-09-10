@@ -10,11 +10,17 @@ export function createOpenApiRpcClient({
     path.split("/").filter(Boolean).pop() ||
     `${method}:${path}`,
   fetchImpl = fetch,
+  eventsPath = "/rpc-events", // NEW: default SSE endpoint
 } = {}) {
   let spec = null;
   let ops = null; // { [name]: { method, url, paramDefs, bodySchema } }
   let ready = false;
   let loading = null; // in-flight promise to avoid duplicate fetches
+
+  // --- client "onCall" handlers + SSE subscription (lazy) ---
+  const handlers = new Map(); // toolName -> fn(event)
+  let sse = null;
+  let sseConnected = false;
 
   const toAbs = (url) => {
     if (/^https?:\/\//i.test(url)) return url;
@@ -22,6 +28,59 @@ export function createOpenApiRpcClient({
     const root = server ? new URL(server, base).toString() : base;
     return new URL(url, root).toString();
   };
+
+  function ensureSseSubscribed() {
+    if (typeof window === "undefined" || typeof EventSource === "undefined") {
+      return false; // not a browser; noop
+    }
+    if (sseConnected) return true;
+    try {
+      const url = toAbs(eventsPath);
+      sse = new EventSource(url);
+      sse.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data || "{}");
+          // Accept { type:"tool:called", name, args, ... } OR { type:"tool:call", tool, ... }
+          const name = payload.name || payload.tool;
+          if (!name) return;
+          const fn = handlers.get(name);
+          if (typeof fn === "function") fn(payload);
+        } catch {}
+      };
+      sse.onerror = () => {
+        // Keep connection attempts quiet; browser auto-retries SSE
+      };
+      sseConnected = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Public: register a handler for when *server* runs a tool.
+  function onCall(name, fn) {
+    if (typeof name !== "string" || !name) return;
+    if (typeof fn !== "function") {
+      handlers.delete(name);
+      return;
+    }
+    handlers.set(name, fn);
+    // lazily subscribe the first time someone registers
+    ensureSseSubscribed();
+  }
+
+  // Optional: manual control over events subscription (rarely needed)
+  function $events({ subscribe = true } = {}) {
+    if (!subscribe) {
+      try {
+        sse?.close?.();
+      } catch {}
+      sse = null;
+      sseConnected = false;
+      return false;
+    }
+    return ensureSseSubscribed();
+  }
 
   async function load() {
     const res = await fetchImpl(toAbs(openapiUrl), {
@@ -180,6 +239,10 @@ export function createOpenApiRpcClient({
         await ensure();
         return spec;
       },
+      // NEW: server->client event helpers
+      onCall, // register handler per tool
+      $events, // manually enable/disable SSE if desired
+
       [Symbol.toStringTag]: "OpenApiRpcClient",
       toString() {
         return "[object OpenApiRpcClient]";
@@ -190,9 +253,12 @@ export function createOpenApiRpcClient({
     },
     {
       get(target, prop, receiver) {
-        // Don’t look like a thenable / preserve basics
         if (specialProps.has(prop)) return target[prop];
-        if (typeof prop !== "string" || prop.startsWith("$")) {
+        if (
+          typeof prop !== "string" ||
+          prop.startsWith("$") ||
+          prop === "onCall"
+        ) {
           return Reflect.get(target, prop, receiver);
         }
         // Return callable that lazy-loads spec
@@ -201,14 +267,12 @@ export function createOpenApiRpcClient({
           return doCall(prop, args, opts);
         };
       },
-      // Also avoid being mistaken for a promise by defining has/ownKeys behavior
       has(_t, key) {
         if (specialProps.has(key)) return true;
         return true; // dynamic methods
       },
       ownKeys() {
-        // not strictly necessary, but handy
-        return ["$refresh", "$list", "$call", "$spec"];
+        return ["$refresh", "$list", "$call", "$spec", "onCall", "$events"];
       },
     }
   );
@@ -224,4 +288,7 @@ export function getRpcClient(opts = {}) {
 export const rpc = getRpcClient();
 export function callTool(name, args) {
   rpc.doCall(name, args);
+}
+export function onToolCalled(name, fn) {
+  rpc.onCall(name, fn);
 }

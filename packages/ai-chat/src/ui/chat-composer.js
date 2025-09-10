@@ -6,11 +6,8 @@ import "./chat-tool-select.js";
 export class ChatComposer extends LitElement {
   static styles = css`
     .wrap {
-      background: var(--bg);
       height: auto;
       padding-top: 30px;
-      border-top: 1px solid var(--border);
-      box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1), 0 -1px 2px rgba(0, 0, 0, 0.06);
     }
     .button-wrap {
       position: relative;
@@ -62,7 +59,7 @@ export class ChatComposer extends LitElement {
       padding-top: 0;
     }
     :host(:not([multiline])) .button-wrap {
-      bottom: 18px;
+      bottom: 14px;
     }
     :host(:not([multiline])) form {
       left: 30px;

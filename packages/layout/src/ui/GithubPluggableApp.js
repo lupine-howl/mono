@@ -129,8 +129,6 @@ export class GithubPluggableApp extends LitElement {
 
     /* ===== Workspace ===== */
     .workspace {
-      display: grid;
-      grid-template-columns: var(--sec-side) minmax(0, 1fr);
       min-height: calc(100vh - var(--appbar-h));
     }
     .sec-sidebar {
@@ -245,22 +243,23 @@ export class GithubPluggableApp extends LitElement {
       background: linear-gradient(to top, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0)),
         var(--bg);
       pointer-events: none; /* container */
+      border-top: 1px solid var(--border);
     }
     .composer > .composer-inner {
       pointer-events: auto; /* actual UI is interactive */
       margin: 0 auto;
+      width: min(100%, var(--main-max));
     }
 
     /* ===== Narrow screens ===== */
     @media (max-width: 900px) {
       .workspace {
-        grid-template-columns: 0 minmax(0, 1fr);
       }
       .sec-sidebar {
         display: none;
       }
       .composer {
-        left:0;
+        left: 0;
       }
     }
   `;
