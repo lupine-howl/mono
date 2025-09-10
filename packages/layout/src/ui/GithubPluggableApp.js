@@ -30,8 +30,8 @@ export class GithubPluggableApp extends LitElement {
   static properties = {
     ui: { state: true },
     _drawerOpen: { state: true },
+    _isNarrow: { state: true },
     storageKey: { type: String, attribute: "storage-key" },
-    title: { type: String }, // branding text (row 1)
   };
 
   static styles = css`
@@ -42,89 +42,70 @@ export class GithubPluggableApp extends LitElement {
       --panel: #0f0f12;
       --border: #1f1f22;
 
-      --appbar-h1: 48px; /* branding row height */
-      --appbar-h2: 44px; /* tabs row height */
-      --sec-side: 300px; /* secondary (inline) sidebar width */
-      --main-max: 1200px; /* optional cap for inner content */
+      /* Layout vars */
+      --appbar-h: 48px;
+      --sec-side: 260px; /* secondary (inline) sidebar width on desktop */
+      --main-max: 1200px;
+      --composer-h: 72px; /* approximate height of composer (padding uses this) */
 
       display: block;
       color: var(--fg);
       background: var(--bg);
-      height: 100%;
       min-height: 100vh;
     }
 
-    /* ===== App Bar (two rows) ===== */
+    /* ===== App Bar (single row) ===== */
     .appbar {
+      position: sticky;
+      top: 0;
       z-index: 40;
+      height: var(--appbar-h);
       background: var(--bg);
       border-bottom: 1px solid var(--border);
-    }
-    .brand-row {
-      height: var(--appbar-h1);
       display: grid;
-      grid-template-columns: 1fr max-content;
-      align-items: center;
-      padding: 0 14px;
-      gap: 10px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-    }
-    .brand .dot {
-      width: 18px;
-      height: 18px;
-      border-radius: 4px;
-      background: #8247ff;
-      box-shadow: 0 0 0 2px #3a2a66 inset;
-    }
-    .app-actions {
-      display: flex;
+      grid-template-columns: max-content minmax(0, 1fr);
       align-items: center;
       gap: 8px;
+      padding: 0 10px;
     }
+
     .icon-btn {
       appearance: none;
       border: 1px solid #232327;
       background: #151518;
       color: #cfcfd4;
-      padding: 6px 10px;
+      padding: 8px 10px; /* larger touch target */
       border-radius: 8px;
       cursor: pointer;
+      line-height: 1;
     }
 
-    .tabs-row {
+    /* Tabs (desktop): scrollable row of buttons */
+    .tabs-scroll {
+      min-width: 0;
       display: flex;
       align-items: center;
       gap: 6px;
-      border-bottom: 1px solid var(--border);
-      position: sticky; /* sticks under brand row if it scrolls */
-      top: var(--appbar-h1);
-      background: var(--bg);
-      z-index: 41;
-      padding-bottom: 0;
-      padding-left: 6px;
+      overflow-x: auto;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 2px;
     }
     .tab {
       appearance: none;
       border: none;
       background: transparent;
       color: #cfcfd4;
-      font: 0.9rem system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      font: 0.95rem system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
         Roboto, "Helvetica Neue", Arial, sans-serif;
-      border: 1px solid transparent;
-      padding: 12px;
+      padding: 10px 12px;
       cursor: pointer;
-      opacity: 0.95;
       white-space: nowrap;
-      padding-top: 0;
+      opacity: 0.95;
+      border-bottom: 2px solid transparent;
     }
     .tab[aria-selected="true"] {
-      border-bottom: 2px solid #8247ff;
+      border-bottom-color: #8247ff;
       font-weight: 600;
       color: #fff;
       opacity: 1;
@@ -135,21 +116,30 @@ export class GithubPluggableApp extends LitElement {
       padding-left: 2px;
     }
 
+    /* Tabs (mobile): dropdown select */
+    .tabs-select {
+      width: 100%;
+      background: #151518;
+      color: #e7e7ea;
+      border: 1px solid #232327;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+    }
+
     /* ===== Workspace ===== */
     .workspace {
       display: grid;
       grid-template-columns: var(--sec-side) minmax(0, 1fr);
-      min-height: calc(100vh - var(--appbar-h1) - var(--appbar-h2));
+      min-height: calc(100vh - var(--appbar-h));
     }
     .sec-sidebar {
       border-right: 1px solid var(--border);
       background: var(--panel);
       min-width: 0;
     }
-    .sec-sidebar .placeholder {
-      opacity: 0.5;
-      font-size: 12px;
-      padding: 10px;
+    .sec-wrap {
+      padding: 12px;
     }
 
     .main {
@@ -160,24 +150,28 @@ export class GithubPluggableApp extends LitElement {
       margin: 0 auto;
       display: grid;
       gap: 12px;
+      padding: 16px;
+      /* keep content above the fixed composer */
+      padding-bottom: calc(
+        var(--composer-h) + env(safe-area-inset-bottom, 0px)
+      );
     }
     .content {
       display: grid;
       gap: 12px;
       min-height: 40vh;
-      padding: 16px;
     }
     h3 {
       margin: 0;
       font-weight: 600;
     }
 
-    /* ===== Primary sidebar as off-canvas drawer ===== */
+    /* ===== Primary sidebar as off-canvas drawer (also hosts secondary on mobile) ===== */
     .drawer-root {
       position: fixed;
       inset: 0;
       display: grid;
-      grid-template-columns: 300px 1fr; /* drawer + scrim */
+      grid-template-columns: 320px 1fr; /* drawer + scrim */
       z-index: 100;
       pointer-events: none; /* enable only when open */
     }
@@ -214,7 +208,10 @@ export class GithubPluggableApp extends LitElement {
       padding: 12px;
     }
     .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
       padding: 12px;
+      background: #101014;
     }
     .sidebar label {
       font-size: 12px;
@@ -238,33 +235,32 @@ export class GithubPluggableApp extends LitElement {
       min-width: 0;
     }
 
-    /* Optional composer anchored to bottom of main column */
+    /* Fixed composer at bottom (always) */
     .composer {
       position: fixed;
       left: var(--sec-side);
       right: 0;
       bottom: 0;
-      background: linear-gradient(
-        to top,
-        rgba(0, 0, 0, 0.45),
-        rgba(0, 0, 0, 0)
-      );
-      padding: 8px 0 0;
+      z-index: 50;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0)),
+        var(--bg);
+      pointer-events: none; /* container */
+    }
+    .composer > .composer-inner {
+      pointer-events: auto; /* actual UI is interactive */
+      margin: 0 auto;
     }
 
-    /* Responsive: collapse secondary sidebar on small screens */
+    /* ===== Narrow screens ===== */
     @media (max-width: 900px) {
-      .composer {
-        left: 0;
+      .workspace {
+        grid-template-columns: 0 minmax(0, 1fr);
       }
-      .main {
-        position: absolute;
-        left: 0;
-        right: 0;
-      }
-
       .sec-sidebar {
         display: none;
+      }
+      .composer {
+        left:0;
       }
     }
   `;
@@ -273,8 +269,8 @@ export class GithubPluggableApp extends LitElement {
     super();
     this.plugins = [];
     this.ui = { body: [], sidebar: [], composer: [] };
-    this.title = "Your App";
     this._drawerOpen = false;
+    this._isNarrow = false;
 
     this.tabController = new TabController(this);
 
@@ -287,15 +283,22 @@ export class GithubPluggableApp extends LitElement {
     // tabs
     this.tabController.setTabs(toTabs(this.ui.body));
     const s = this.tabController.get();
-    if (!s.active && s.items?.length) {
+    if (!s.active && s.items?.length)
       this.tabController.setActive(s.items[0].id);
-    }
+
+    // responsive watcher for mobile breakpoint
+    this._mediaQuery = window.matchMedia("(max-width: 900px)");
+    this._onMQ = (e) => {
+      this._isNarrow = e.matches;
+    };
+    this._isNarrow = this._mediaQuery.matches;
+    this._mediaQuery.addEventListener?.("change", this._onMQ);
+    // Fallback for older browsers
+    this._mediaQuery.addListener?.(this._onMQ);
 
     // close drawer on Escape
     this._onKeyDown = (e) => {
-      if (e.key === "Escape" && this._drawerOpen) {
-        this._drawerOpen = false;
-      }
+      if (e.key === "Escape" && this._drawerOpen) this._drawerOpen = false;
     };
   }
 
@@ -305,6 +308,8 @@ export class GithubPluggableApp extends LitElement {
   }
   disconnectedCallback() {
     window.removeEventListener("keydown", this._onKeyDown);
+    this._mediaQuery.removeEventListener?.("change", this._onMQ);
+    this._mediaQuery.removeListener?.(this._onMQ);
     super.disconnectedCallback?.();
   }
 
@@ -316,29 +321,52 @@ export class GithubPluggableApp extends LitElement {
   _toggleDrawer = () => (this._drawerOpen = !this._drawerOpen);
   _closeDrawer = () => (this._drawerOpen = false);
 
+  /* Tabs renderer: desktop buttons or mobile select */
   renderTabs() {
     const { items = [], active = "" } = this.tabController.get() || {};
     if (!items?.length)
       return html`<span class="tabs-empty">No tabs configured.</span>`;
-    return items.map(
-      (t) => html`
-        <button
-          class="tab"
-          role="tab"
-          aria-selected=${String(active === t.id)}
-          @click=${() => this.tabController.setActive(t.id)}
+
+    if (this._isNarrow) {
+      return html`
+        <select
+          class="tabs-select"
+          aria-label="Select section"
+          @change=${(e) => this.tabController.setActive(e.target.value)}
         >
-          ${t.label}
-        </button>
-      `
-    );
+          ${items.map(
+            (t) =>
+              html`<option value=${t.id} ?selected=${active === t.id}>
+                ${t.label}
+              </option>`
+          )}
+        </select>
+      `;
+    }
+
+    return html`
+      <div class="tabs-scroll" role="tablist" aria-label="Main content tabs">
+        ${items.map(
+          (t) => html`
+            <button
+              class="tab"
+              role="tab"
+              aria-selected=${String(active === t.id)}
+              @click=${() => this.tabController.setActive(t.id)}
+            >
+              ${t.label}
+            </button>
+          `
+        )}
+      </div>
+    `;
   }
 
-  renderSidebar(sidebar) {
-    return sidebar.map(
+  renderSidebarBlocks(blocks) {
+    return blocks.map(
       ({ label, render, wrapperStyle }) => html`
         <div class=${wrapperStyle || "card"}>
-          <h3>${label}</h3>
+          ${label ? html`<h3>${label}</h3>` : ""}
           ${render?.({ controllers: this.controllers }) ??
           html`<div style="opacity:.7">No content.</div>`}
         </div>
@@ -346,14 +374,24 @@ export class GithubPluggableApp extends LitElement {
     );
   }
 
-  renderDrawer() {
+  /* Drawer contains:
+     - Primary sidebar (ui.sidebar)
+     - PLUS secondary sidebar blocks when narrow (body.left) */
+  renderDrawer(leftBlocksWhenNarrow) {
+    const leftBlocks = this._isNarrow ? leftBlocksWhenNarrow : [];
     return html`
       <div
         class="drawer-root ${this._drawerOpen ? "open" : ""}"
         @click=${this._closeDrawer}
       >
         <aside class="drawer sidebar" @click=${(e) => e.stopPropagation()}>
-          <div class="sidebar-wrap">${this.renderSidebar(this.ui.sidebar)}</div>
+          <div class="sidebar-wrap">
+            ${this.renderSidebarBlocks(this.ui.sidebar)}
+            ${leftBlocks?.length
+              ? html`<hr class="card" style="opacity:.3" />`
+              : ""}
+            ${leftBlocks?.length ? this.renderSidebarBlocks(leftBlocks) : ""}
+          </div>
         </aside>
         <div class="scrim"></div>
       </div>
@@ -363,33 +401,28 @@ export class GithubPluggableApp extends LitElement {
   render() {
     const { active = "" } = this.tabController.get() || {};
     const body = this.ui.body.find((i) => i.id === active) ?? this.ui.body[0];
-    let left = body?.left || [];
+    const left = body?.left || []; // secondary sidebar blocks for this tab
 
     return html`
-      <!-- App Bar -->
+      <!-- App Bar: hamburger + tabs -->
       <header class="appbar">
-        <div class="brand-row">
-          <div class="brand">
-            <button
-              class="icon-btn"
-              @click=${this._toggleDrawer}
-              title="Toggle sidebar"
-            >
-              ☰
-            </button>
-            <span class="dot" aria-hidden="true"></span>
-            <span>${this.title}</span>
-          </div>
-          <div class="app-actions"></div>
-        </div>
-        <div class="tabs-row" role="tablist" aria-label="Main content tabs">
-          ${this.renderTabs()}
-        </div>
+        <button
+          class="icon-btn"
+          @click=${this._toggleDrawer}
+          title="Open menu"
+          aria-label="Open menu"
+        >
+          ☰
+        </button>
+        ${this.renderTabs()}
       </header>
 
       <!-- Workspace -->
       <div class="workspace">
-        <aside class="sec-sidebar">${this.renderSidebar(left)}</aside>
+        <!-- Secondary sidebar (desktop only; moves to drawer on mobile) -->
+        <aside class="sec-sidebar">
+          <div class="sec-wrap">${this.renderSidebarBlocks(left)}</div>
+        </aside>
 
         <main class="main">
           <div class="main-inner">
@@ -399,23 +432,25 @@ export class GithubPluggableApp extends LitElement {
                 ? body.render({ controllers: this.controllers })
                 : html`<div style="opacity:.7">No content.</div>`}
             </section>
-
-            ${this.ui?.composer?.length
-              ? html`
-                  <div class="composer">
-                    ${this.ui.composer.map(
-                      (i) =>
-                        i.render?.({ controllers: this.controllers }) ??
-                        i.render?.()
-                    )}
-                  </div>
-                `
-              : html``}
           </div>
         </main>
       </div>
 
-      ${this.renderDrawer()}
+      <!-- Fixed Composer -->
+      ${this.ui?.composer?.length
+        ? html`
+            <div class="composer">
+              <div class="composer-inner">
+                ${this.ui.composer.map(
+                  (i) =>
+                    i.render?.({ controllers: this.controllers }) ??
+                    i.render?.()
+                )}
+              </div>
+            </div>
+          `
+        : html``}
+      ${this.renderDrawer(left)}
     `;
   }
 }
