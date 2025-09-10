@@ -10,12 +10,47 @@ export function createOpenApiRpcClient({
     path.split("/").filter(Boolean).pop() ||
     `${method}:${path}`,
   fetchImpl = fetch,
-  eventsPath = "/rpc-events", // NEW: default SSE endpoint
+  eventsPath = "/rpc-events", // default SSE endpoint
+  // Lightweight cache + dedupe (anti-burst)
+  cacheGETMs = 300, // cache GETs for N ms (0 to disable)
+  dedupeRequests = true, // coalesce identical in-flight requests
+  maxCacheEntries = 200, // simple LRU cap
 } = {}) {
   let spec = null;
   let ops = null; // { [name]: { method, url, paramDefs, bodySchema } }
   let ready = false;
-  let loading = null; // in-flight promise to avoid duplicate fetches
+  let loading = null; // in-flight promise to avoid duplicate spec fetches
+
+  // anti-burst: in-flight dedupe + tiny TTL cache for GETs
+  const inflight = new Map(); // key -> Promise
+  const cache = new Map(); // key -> { value, expires }
+
+  const getNow = () => Date.now();
+  const lruBump = (key, val) => {
+    // Map preserves insertion order; delete+set to bump
+    cache.delete(key);
+    cache.set(key, val);
+    if (cache.size > maxCacheEntries) {
+      const first = cache.keys().next().value;
+      cache.delete(first);
+    }
+  };
+  const cacheGet = (key) => {
+    const hit = cache.get(key);
+    if (!hit) return undefined;
+    if (hit.expires <= getNow()) {
+      cache.delete(key);
+      return undefined;
+    }
+    lruBump(key, hit);
+    return hit.value;
+  };
+  const cacheSet = (key, value, ttlMs) => {
+    if (ttlMs <= 0) return;
+    lruBump(key, { value, expires: getNow() + ttlMs });
+  };
+  const makeKey = (method, url, body) =>
+    `${method} ${url}${body ? ` ${body}` : ""}`;
 
   // --- client "onCall" handlers + SSE subscription (lazy) ---
   const handlers = new Map(); // toolName -> fn(event)
@@ -183,7 +218,11 @@ export function createOpenApiRpcClient({
     return fin.toString();
   }
 
-  async function doCall(opName, args = {}, { method, signal, headers } = {}) {
+  async function doCall(
+    opName,
+    args = {},
+    { method, signal, headers, cacheMs, dedupe } = {}
+  ) {
     const op = ops?.[opName];
     if (!op) throw new Error(`Unknown RPC: ${opName}`);
     const actualMethod = (method || op.method || "POST").toUpperCase();
@@ -203,10 +242,34 @@ export function createOpenApiRpcClient({
       const hasQuery = op.paramDefs?.some((p) => p.in === "query");
       if (hasQuery) url = applyParams(url, args, op.paramDefs);
     }
-    const r = await fetch(url, init);
-    const text = await r.text();
-    if (!r.ok) throw new Error(text || r.statusText);
-    return text ? JSON.parse(text) : null;
+
+    const key = makeKey(actualMethod, url, init.body);
+    const effCacheMs = actualMethod === "GET" ? (cacheMs ?? cacheGETMs) : 0;
+    const effDedupe = dedupe ?? dedupeRequests;
+
+    if (effCacheMs > 0) {
+      const hit = cacheGet(key);
+      if (hit !== undefined) return hit;
+    }
+    if (effDedupe && inflight.has(key)) {
+      return inflight.get(key);
+    }
+
+    const p = (async () => {
+      const r = await fetchImpl(url, init);
+      const text = await r.text();
+      if (!r.ok) throw new Error(text || r.statusText);
+      const data = text ? JSON.parse(text) : null;
+      if (effCacheMs > 0) cacheSet(key, data, effCacheMs);
+      return data;
+    })();
+
+    if (effDedupe) inflight.set(key, p);
+    try {
+      return await p;
+    } finally {
+      inflight.delete(key);
+    }
   }
 
   const specialProps = new Set([
@@ -239,7 +302,7 @@ export function createOpenApiRpcClient({
         await ensure();
         return spec;
       },
-      // NEW: server->client event helpers
+      // server->client event helpers
       onCall, // register handler per tool
       $events, // manually enable/disable SSE if desired
 
@@ -286,8 +349,8 @@ export function getRpcClient(opts = {}) {
   return getGlobalSingleton(KEY, () => createOpenApiRpcClient());
 }
 export const rpc = getRpcClient();
-export function callTool(name, args) {
-  rpc.doCall(name, args);
+export function callTool(name, args, opts) {
+  return rpc.$call(name, args, opts);
 }
 export function onToolCalled(name, fn) {
   rpc.onCall(name, fn);
