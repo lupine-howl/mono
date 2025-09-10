@@ -129,6 +129,8 @@ export class GithubPluggableApp extends LitElement {
 
     /* ===== Workspace ===== */
     .workspace {
+      display: grid;
+      grid-template-columns: var(--sec-side) minmax(0, 1fr);
       min-height: calc(100vh - var(--appbar-h));
     }
     .sec-sidebar {
@@ -254,6 +256,7 @@ export class GithubPluggableApp extends LitElement {
     /* ===== Narrow screens ===== */
     @media (max-width: 900px) {
       .workspace {
+        display: block;
       }
       .sec-sidebar {
         display: none;
