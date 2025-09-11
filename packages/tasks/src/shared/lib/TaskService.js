@@ -22,9 +22,24 @@ export class TaskService {
     this._rev = 0;
     this._ready = this.sync();
 
-    onToolCalled("dbtasksCreate", ({ args }) => {
-      console.log("[tasks] tool triggered create", args);
-      this.sync();
+    // When a task is created elsewhere, ingest the provided values directly
+    // instead of doing a full sync. The hook supplies args.values (the row).
+    onToolCalled("dbtasksInsert", ({result}) => {
+      console.log(result);
+      try {
+        const item = result?.item;
+        console.log(item);
+        if (item) {
+          this._upsertFromServer(item);
+          this.select(item.id);
+        } else {
+          // Fallback to full sync if payload is missing
+          this.sync();
+        }
+      } catch (e) {
+        console.warn("[tasks] hook create handling failed; falling back to sync", e);
+        this.sync();
+      }
     });
   }
 
@@ -128,6 +143,36 @@ export class TaskService {
     return true;
   }
 
+  // Factor out optimistic local insert so we can reuse it
+  _addLocal(local, { select = true } = {}) {
+    this.batch(() => {
+      this._setTasks([local, ...this.state.tasks], {
+        op: "add:local",
+        id: local[this.pk],
+      });
+      if (select) {
+        this.state = { ...this.state, selectedId: local[this.pk] };
+        this._notify({ op: "select", id: local[this.pk] });
+      }
+    });
+  }
+
+  // Upsert a server-truth item into local state (used by hooks)
+  _upsertFromServer(item) {
+    const id = item?.[this.pk];
+    if (!id) return;
+
+    const exists = this.state.tasks.some((t) => t[this.pk] === id);
+    const next = exists
+      ? this.state.tasks.map((t) => (t[this.pk] === id ? { ...t, ...item } : t))
+      : [item, ...this.state.tasks];
+
+    // Keep descending createdAt order if available
+    next.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    this._setTasks(next, { op: exists ? "hook:update" : "hook:add", id });
+  }
+
   // ---------- Commands ----------
   select(id) {
     if (id === this.state.selectedId) return;
@@ -191,15 +236,8 @@ export class TaskService {
       updatedAt: now,
     };
 
-    // optimistic
-    this.batch(() => {
-      this._setTasks([local, ...this.state.tasks], {
-        op: "add:local",
-        id: local[this.pk],
-      });
-      this.state = { ...this.state, selectedId: local[this.pk] };
-      this._notify({ op: "select", id: local[this.pk] });
-    });
+    // optimistic local insert (and select)
+    this._addLocal(local, { select: true });
 
     try {
       const r = await dbInsert({ table: this.table, values: local });

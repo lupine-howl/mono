@@ -174,7 +174,7 @@ export class GithubPluggableApp extends LitElement {
       padding: 16px;
       /* keep content above the fixed composer */
       padding-bottom: calc(
-        var(--composer-h) + env(safe-area-inset-bottom, 0px)
+        var(--composer-h) + env(safe-area-inset-bottom, 0px) + 100px
       );
     }
     .content {

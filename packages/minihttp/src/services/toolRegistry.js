@@ -132,6 +132,7 @@ export function createToolRegistry({
               type: "tool:called",
               name: t.name,
               args: v.value,
+              result,
               ok: true,
               at: Date.now(),
             });
@@ -155,6 +156,7 @@ export function createToolRegistry({
                 type: "tool:called",
                 name: t.name,
                 args: v.value,
+                result,
                 ok: true,
                 at: Date.now(),
               });

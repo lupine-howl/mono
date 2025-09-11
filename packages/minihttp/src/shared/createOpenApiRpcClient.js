@@ -1,14 +1,10 @@
 import { getGlobalSingleton } from "@loki/utilities";
 
 export function createOpenApiRpcClient({
-  base = typeof location !== "undefined"
-    ? location.origin
-    : "http://localhost:3000",
+  base = typeof location !== "undefined" ? location.origin : "http://localhost:3000",
   openapiUrl = "/openapi.json",
   nameFrom = (path, method, op) =>
-    op.operationId ||
-    path.split("/").filter(Boolean).pop() ||
-    `${method}:${path}`,
+    op.operationId || path.split("/").filter(Boolean).pop() || `${method}:${path}`,
   fetchImpl = fetch,
   eventsPath = "/rpc-events", // default SSE endpoint
   // Lightweight cache + dedupe (anti-burst)
@@ -49,11 +45,17 @@ export function createOpenApiRpcClient({
     if (ttlMs <= 0) return;
     lruBump(key, { value, expires: getNow() + ttlMs });
   };
-  const makeKey = (method, url, body) =>
-    `${method} ${url}${body ? ` ${body}` : ""}`;
+  const makeKey = (method, url, body) => `${method} ${url}${body ? ` ${body}` : ""}`;
 
-  // --- client "onCall" handlers + SSE subscription (lazy) ---
-  const handlers = new Map(); // toolName -> fn(event)
+  // --- client event handlers + SSE subscription (lazy) ---
+  // New, idiomatic semantics:
+  //  - onBeforeCall(name, fn): receives incoming args BEFORE tool runs (SSE type "tool:called" or client-init tap)
+  //  - onCall(name, fn): receives server RETURNED values AFTER tool completes (SSE type "tool:result" or client-init tap)
+  //  - onError(name, fn): receives error payloads (SSE type "tool:error" or client-init tap)
+  const beforeHandlers = new Map(); // toolName -> fn({ name, args, ... })
+  const resultHandlers = new Map(); // toolName -> fn({ name, result, args?, ... })
+  const errorHandlers = new Map(); // toolName -> fn({ name, error, args?, ... })
+
   let sse = null;
   let sseConnected = false;
 
@@ -73,13 +75,27 @@ export function createOpenApiRpcClient({
       const url = toAbs(eventsPath);
       sse = new EventSource(url);
       sse.onmessage = (e) => {
+        //console.log(e);
         try {
           const payload = JSON.parse(e.data || "{}");
-          // Accept { type:"tool:called", name, args, ... } OR { type:"tool:call", tool, ... }
+          const type = payload.type || "";
           const name = payload.name || payload.tool;
           if (!name) return;
-          const fn = handlers.get(name);
-          if (typeof fn === "function") fn(payload);
+          if (type === "tool:called") {
+            const fn = resultHandlers.get(name);
+            if (typeof fn === "function") fn(payload); // { name, result, args?, ... }
+            return;
+          }
+          /*
+          if (type === "tool:error") {
+            const fn = errorHandlers.get(name);
+            if (typeof fn === "function") fn(payload); // { name, error, args?, ... }
+            return;
+          }
+          // Back-compat / generic “called” -> beforeCall
+          const fn = beforeHandlers.get(name);
+          if (typeof fn === "function") fn(payload); // { name, args, ... }
+          */
         } catch {}
       };
       sse.onerror = () => {
@@ -92,24 +108,30 @@ export function createOpenApiRpcClient({
     }
   }
 
-  // Public: register a handler for when *server* runs a tool.
+  // Public: register handlers
+  function onBeforeCall(name, fn) {
+    if (typeof name !== "string" || !name) return;
+    if (typeof fn !== "function") beforeHandlers.delete(name);
+    else beforeHandlers.set(name, fn);
+    ensureSseSubscribed();
+  }
   function onCall(name, fn) {
     if (typeof name !== "string" || !name) return;
-    if (typeof fn !== "function") {
-      handlers.delete(name);
-      return;
-    }
-    handlers.set(name, fn);
-    // lazily subscribe the first time someone registers
+    if (typeof fn !== "function") resultHandlers.delete(name);
+    else { resultHandlers.set(name, fn); /*console.log(resultHandlers);*/}
+    ensureSseSubscribed();
+  }
+  function onError(name, fn) {
+    if (typeof name !== "string" || !name) return;
+    if (typeof fn !== "function") errorHandlers.delete(name);
+    else errorHandlers.set(name, fn);
     ensureSseSubscribed();
   }
 
   // Optional: manual control over events subscription (rarely needed)
   function $events({ subscribe = true } = {}) {
     if (!subscribe) {
-      try {
-        sse?.close?.();
-      } catch {}
+      try { sse?.close?.(); } catch {}
       sse = null;
       sseConnected = false;
       return false;
@@ -118,13 +140,8 @@ export function createOpenApiRpcClient({
   }
 
   async function load() {
-    const res = await fetchImpl(toAbs(openapiUrl), {
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok)
-      throw new Error(
-        `Failed to fetch OpenAPI: ${res.status} ${await res.text()}`
-      );
+    const res = await fetchImpl(toAbs(openapiUrl), { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`Failed to fetch OpenAPI: ${res.status} ${await res.text()}`);
     spec = await res.json();
     ops = indexSpec(spec);
     ready = true;
@@ -147,8 +164,7 @@ export function createOpenApiRpcClient({
 
         const existing = map[fnName];
         const score = method.toUpperCase() === "POST" ? 2 : 1;
-        const existingScore =
-          existing?.method === "POST" ? 2 : existing ? 1 : 0;
+        const existingScore = existing?.method === "POST" ? 2 : existing ? 1 : 0;
         if (score < existingScore) continue;
 
         const paramDefs = (op.parameters || []).map((p) => ({
@@ -157,12 +173,11 @@ export function createOpenApiRpcClient({
           required: !!p.required,
           schema: p.schema || {},
         }));
-        const bodySchema =
-          op.requestBody?.content?.["application/json"]?.schema || null;
+        const bodySchema = op.requestBody?.content?.["application/json"]?.schema || null;
 
         map[fnName] = {
           name: fnName,
-          method: method.toUpperCase(),
+          method: (method || "").toUpperCase(),
           path,
           url: path,
           paramDefs,
@@ -191,10 +206,7 @@ export function createOpenApiRpcClient({
         if (val == null && p.required)
           throw new Error(`Missing required path param: ${p.name}`);
         if (val != null) {
-          finalHref = finalHref.replace(
-            new RegExp(`\\{${p.name}\\}`, "g"),
-            encodeURIComponent(String(val))
-          );
+          finalHref = finalHref.replace(new RegExp(`\\{${p.name}\\}`, "g"), encodeURIComponent(String(val)));
         }
       }
     }
@@ -203,13 +215,11 @@ export function createOpenApiRpcClient({
       if (p.in === "query") {
         const val = args?.[p.name];
         if (val == null) {
-          if (p.required)
-            throw new Error(`Missing required query param: ${p.name}`);
+          if (p.required) throw new Error(`Missing required query param: ${p.name}`);
           continue;
         }
         if (Array.isArray(val)) {
-          for (const it of val)
-            fin.searchParams.append(p.name, coerceQueryValue(it));
+          for (const it of val) fin.searchParams.append(p.name, coerceQueryValue(it));
         } else {
           fin.searchParams.set(p.name, coerceQueryValue(val));
         }
@@ -218,21 +228,13 @@ export function createOpenApiRpcClient({
     return fin.toString();
   }
 
-  async function doCall(
-    opName,
-    args = {},
-    { method, signal, headers, cacheMs, dedupe } = {}
-  ) {
+  async function doCall(opName, args = {}, { method, signal, headers, cacheMs, dedupe } = {}) {
     const op = ops?.[opName];
     if (!op) throw new Error(`Unknown RPC: ${opName}`);
     const actualMethod = (method || op.method || "POST").toUpperCase();
 
     let url = toAbs(op.url);
-    const init = {
-      method: actualMethod,
-      headers: { Accept: "application/json", ...(headers || {}) },
-      signal,
-    };
+    const init = { method: actualMethod, headers: { Accept: "application/json", ...(headers || {}) }, signal };
 
     if (actualMethod === "GET") {
       url = applyParams(url, args, op.paramDefs);
@@ -247,6 +249,12 @@ export function createOpenApiRpcClient({
     const effCacheMs = actualMethod === "GET" ? (cacheMs ?? cacheGETMs) : 0;
     const effDedupe = dedupe ?? dedupeRequests;
 
+    // Notify local before-handlers for client-initiated calls as well (symmetry with SSE)
+    try {
+      const fn = beforeHandlers.get(opName);
+      if (typeof fn === "function") fn({ name: opName, args });
+    } catch {}
+
     if (effCacheMs > 0) {
       const hit = cacheGet(key);
       if (hit !== undefined) return hit;
@@ -258,9 +266,21 @@ export function createOpenApiRpcClient({
     const p = (async () => {
       const r = await fetchImpl(url, init);
       const text = await r.text();
-      if (!r.ok) throw new Error(text || r.statusText);
+      if (!r.ok) {
+        // notify onError locally
+        try {
+          const fn = errorHandlers.get(opName);
+          if (typeof fn === "function") fn({ name: opName, error: text || r.statusText, args });
+        } catch {}
+        throw new Error(text || r.statusText);
+      }
       const data = text ? JSON.parse(text) : null;
       if (effCacheMs > 0) cacheSet(key, data, effCacheMs);
+      // notify onCall (result) locally
+      try {
+        const fn = resultHandlers.get(opName);
+        if (typeof fn === "function") {console.log("Calling",opName);fn({ name: opName, result: data, args });}
+      } catch {}
       return data;
     })();
 
@@ -272,15 +292,7 @@ export function createOpenApiRpcClient({
     }
   }
 
-  const specialProps = new Set([
-    "then",
-    "catch",
-    "finally", // promise detection
-    "toJSON",
-    "toString",
-    "valueOf",
-    Symbol.toStringTag,
-  ]);
+  const specialProps = new Set(["then", "catch", "finally", "toJSON", "toString", "valueOf", Symbol.toStringTag]);
 
   const rpc = new Proxy(
     {
@@ -303,27 +315,26 @@ export function createOpenApiRpcClient({
         return spec;
       },
       // server->client event helpers
-      onCall, // register handler per tool
-      $events, // manually enable/disable SSE if desired
+      onBeforeCall,
+      onCall,
+      onError,
+      $events,
 
       [Symbol.toStringTag]: "OpenApiRpcClient",
-      toString() {
-        return "[object OpenApiRpcClient]";
-      },
-      valueOf() {
-        return 1;
-      },
+      toString() { return "[object OpenApiRpcClient]"; },
+      valueOf() { return 1; },
     },
     {
       get(target, prop, receiver) {
         if (specialProps.has(prop)) return target[prop];
-        if (
-          typeof prop !== "string" ||
-          prop.startsWith("$") ||
-          prop === "onCall"
-        ) {
+        if (typeof prop !== "string" || prop.startsWith("$")) {
           return Reflect.get(target, prop, receiver);
         }
+        // expose handlers as properties (e.g., rpc.onCall)
+        if (prop === "onBeforeCall") return onBeforeCall;
+        if (prop === "onCall") return onCall;
+        if (prop === "onError") return onError;
+        if (prop === "$events") return $events;
         // Return callable that lazy-loads spec
         return async (args, opts) => {
           await ensure();
@@ -335,7 +346,7 @@ export function createOpenApiRpcClient({
         return true; // dynamic methods
       },
       ownKeys() {
-        return ["$refresh", "$list", "$call", "$spec", "onCall", "$events"];
+        return ["$refresh", "$list", "$call", "$spec", "onBeforeCall", "onCall", "onError", "$events"];
       },
     }
   );
@@ -346,12 +357,13 @@ export function createOpenApiRpcClient({
 // ---- singleton helpers ----
 export function getRpcClient(opts = {}) {
   const KEY = Symbol.for("@loki/minihttp:rpc-client");
-  return getGlobalSingleton(KEY, () => createOpenApiRpcClient());
+  return getGlobalSingleton(KEY, () => createOpenApiRpcClient(opts));
 }
 export const rpc = getRpcClient();
 export function callTool(name, args, opts) {
   return rpc.$call(name, args, opts);
 }
+// Back-compat alias: previous code used onToolCalled -> onCall (now means post-result)
 export function onToolCalled(name, fn) {
   rpc.onCall(name, fn);
 }
