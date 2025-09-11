@@ -1,6 +1,7 @@
 // src/ui/plugin.js
 import { html } from "lit";
 import "@loki/ai-chat/ui/chat-stream.js";
+import "@loki/ai-chat/ui/chat-alerts.js";
 import "@loki/ai-chat/ui/chat-composer.js";
 import "@loki/ai-chat/ui/model-select.js";
 import "@loki/ai-chat/ui/context-viewer.js";
@@ -20,6 +21,16 @@ export default ({ components }) => {
         order: 100,
         render: () => {
           return html` <chat-composer></chat-composer> `;
+        },
+      },
+    ],
+    alerts: [
+      {
+        id: `${ns}:alerts`,
+        label: "Alerts",
+        order: 100,
+        render: () => {
+          return html` <chat-alerts></chat-alerts> `;
         },
       },
     ],

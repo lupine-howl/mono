@@ -1,4 +1,3 @@
-// ui/github-pluggable-app.js
 import { LitElement, html, css } from "lit";
 import { TabController } from "../shared/TabController.js";
 
@@ -36,7 +35,6 @@ export class GithubPluggableApp extends LitElement {
 
   static styles = css`
     :host {
-      /* Theme */
       --bg: #0b0b0c;
       --fg: #e7e7ea;
       --panel: #0f0f12;
@@ -273,7 +271,24 @@ export class GithubPluggableApp extends LitElement {
       width: min(100%, var(--main-max));
     }
 
-    /* ===== Narrow screens ===== */
+    /* New: Alerts overlay on the right, anchored above composer, same width as left sidebar */
+    .alerts {
+      position: fixed;
+      right: 10px;
+      bottom: calc(var(--composer-h) + 8px);
+      width: var(--sec-side - 20px);
+      max-width: var(--sec-side);
+      z-index: 60;
+      display: grid;
+      gap: 8px;
+      padding: 8px;
+      pointer-events: auto;
+      font-size:0.9em;
+    }
+    .alerts > * {
+      /* children can render their own visuals */
+    }
+
     @media (max-width: 900px) {
       .workspace {
         display: block;
@@ -286,6 +301,14 @@ export class GithubPluggableApp extends LitElement {
       }
       .composer {
         left: 0;
+      }
+      /* On small screens, align alerts with full width under app bar */
+      .alerts {
+        right: 0;
+        left: 0;
+        width: auto;
+        max-width: none;
+        margin: 0 8px;
       }
     }
   `;
@@ -472,6 +495,16 @@ export class GithubPluggableApp extends LitElement {
                     i.render?.()
                 )}
               </div>
+            </div>
+          `
+        : html``}
+      ${this.ui?.alerts?.length
+        ? html`
+            <div class="alerts" aria-label="Alerts">
+              ${this.ui.alerts.map(
+                (i) =>
+                  i.render?.({ controllers: this.controllers }) ?? i.render?.()
+              )}
             </div>
           `
         : html``}
