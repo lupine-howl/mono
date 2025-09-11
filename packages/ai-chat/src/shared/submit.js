@@ -36,18 +36,19 @@ export async function submit(svc, prompt) {
   if (svc.state.attachments?.length) ctx.push(...svc.state.attachments);
 
   // user message
-  pushMessage(svc, {
+  const userId = pushMessage(svc, {
     role: "user",
     content: text,
     kind: "chat",
     attachments: ctx,
   });
 
-  // placeholder
+  // placeholder assistant message (child of user)
   let placeholderId = pushMessage(svc, {
     role: "assistant",
     content: "Thinking...",
     kind: "tool_waiting",
+    parentId: userId,
   });
 
   svc.set({ loading: true });
@@ -136,6 +137,7 @@ export async function submit(svc, prompt) {
           name: called,
           args,
           meta,
+          parentId: userId,
         });
       } else {
         updateMessage(svc, placeholderId, {

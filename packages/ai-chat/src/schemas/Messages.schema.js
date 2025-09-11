@@ -8,6 +8,13 @@ export const messagesSchema = {
     // identity & grouping
     id: { type: "string" },
     conversationId: { type: "string" },
+    // NEW: parent linkage for threading
+    parentId: {
+      type: ["string", "null"],
+      description:
+        "Parent message id (assistant/tool responses can point to the triggering user message)",
+      default: null,
+    },
     idx: { type: "integer", minimum: 0 },
 
     // message semantics
