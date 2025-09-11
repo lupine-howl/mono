@@ -274,8 +274,8 @@ export class GithubPluggableApp extends LitElement {
     /* New: Alerts overlay on the right, anchored above composer, same width as left sidebar */
     .alerts {
       position: fixed;
-      right: 10px;
-      bottom: calc(var(--composer-h) + 8px);
+      right: 3px;
+      bottom: calc(var(--composer-h) + 12px);
       width: var(--sec-side - 20px);
       max-width: var(--sec-side);
       z-index: 60;

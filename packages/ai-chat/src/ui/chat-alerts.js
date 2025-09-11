@@ -9,6 +9,7 @@ import { AIChatController } from "../shared/AIChatController.js";
  * - Sits above the composer via --composer-height (or --alerts-bottom)
  * - Accepts alerts=[], or derives compact alerts from the current chat state
  * - Supports a loading state with shimmer and an optional spinner
+ * - Individual alerts are dismissible (×) and show a spinner if their group is waiting
  */
 export class ChatAlerts extends LitElement {
   static properties = {
@@ -30,6 +31,9 @@ export class ChatAlerts extends LitElement {
       // only re-render if using derived alerts
       if (this.alerts === undefined) this.requestUpdate();
     });
+
+    // Track dismissed alerts by id
+    this._dismissed = new Set();
   }
 
   disconnectedCallback() {
@@ -38,11 +42,27 @@ export class ChatAlerts extends LitElement {
   }
 
   static styles = css`
+    /* Ensure padding/border don't cause overflow */
+    :host,
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
     :host {
       display: grid;
       gap: 8px;
       align-content: end;
       overflow: auto;
+      padding: 8px;
+      background: rgba(100, 100, 100, 0.1); /* testing visibility */
+      z-index: 1000;
+
+      /* Fluid width up to a cap (defaults to 300px) */
+      width: 100%;
+      max-width: var(--alerts-max-width, var(--sidebar-width, 300px));
+
       scrollbar-width: thin;
       scrollbar-color: #444 #0b0b0c;
     }
@@ -59,6 +79,7 @@ export class ChatAlerts extends LitElement {
     }
 
     .alert {
+      position: relative;
       border-radius: 10px;
       padding: 8px 10px;
       border: 1px solid #1f1f22;
@@ -66,6 +87,12 @@ export class ChatAlerts extends LitElement {
       display: grid;
       gap: 6px;
       color: inherit;
+
+      /* Prevent any child from forcing overflow */
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
     }
 
     /* Levels (typical alert look) */
@@ -86,12 +113,22 @@ export class ChatAlerts extends LitElement {
       background: #1b0e0e;
     }
 
+    .head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0; /* allow children to shrink */
+    }
+
     .title {
       font-size: 12px;
-      opacity: 0.85;
+      font-weight: 600;
+      opacity: 0.9;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
+      flex: 1 1 auto; /* take remaining space and allow shrinking */
     }
     .body {
       font-size: 13px;
@@ -100,12 +137,9 @@ export class ChatAlerts extends LitElement {
       -webkit-line-clamp: 3;
       -webkit-box-orient: vertical;
       overflow: hidden;
-    }
-
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      /* break long unbroken strings/URLs */
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .spinner {
@@ -117,11 +151,31 @@ export class ChatAlerts extends LitElement {
       animation: spin 0.9s linear infinite;
       flex: 0 0 auto;
     }
-
     @keyframes spin {
       to {
         transform: rotate(360deg);
       }
+    }
+
+    .close {
+      margin-left: auto;
+      border: 1px solid #2a2a30;
+      background: #151519;
+      color: inherit;
+      font: inherit;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1;
+      flex: 0 0 auto; /* don't shrink below its size */
+    }
+
+    /* Shimmer should respect container width */
+    shimmer-effect {
+      display: block;
+      width: 100%;
+      max-width: 100%;
     }
 
     .skeleton {
@@ -133,6 +187,8 @@ export class ChatAlerts extends LitElement {
       height: 42px;
       border-radius: 8px;
       overflow: hidden;
+      width: 100%;
+      max-width: 100%;
     }
     .skeleton .spinWrap {
       position: absolute;
@@ -161,6 +217,7 @@ export class ChatAlerts extends LitElement {
     for (const m of msgs) {
       if (m.role === "user" && (m.parentId == null || m.parentId === "")) {
         const children = (byParent.get(m.id) || []).filter(Boolean);
+        const waiting = children.some((c) => c?.kind === "tool_waiting");
         // Prefer the last assistant-like child for the body
         const resp = [...children]
           .reverse()
@@ -172,7 +229,15 @@ export class ChatAlerts extends LitElement {
           );
         const title = this._short(m.content, 80);
         const body = this._short(resp?.content ?? "", 160);
-        alerts.push({ id: m.id, level: "info", title, body });
+        const shimmer = resp?.kind === "tool_waiting";
+        alerts.push({
+          id: m.id,
+          level: "info",
+          title,
+          body,
+          loading: waiting,
+          shimmer,
+        });
       }
     }
 
@@ -188,7 +253,9 @@ export class ChatAlerts extends LitElement {
   }
 
   render() {
-    const alerts = this.alerts ?? this._deriveAlertsFromState();
+    const alerts = (this.alerts ?? this._deriveAlertsFromState()).filter(
+      (a) => !this._dismissed.has(a?.id)
+    );
 
     // Loading state: shimmer blocks + optional spinners
     if (this.loading) {
@@ -210,19 +277,60 @@ export class ChatAlerts extends LitElement {
 
     if (!alerts?.length) return html``;
 
-    return html` ${alerts.map((a) => this._renderAlert(a))} `;
+    return html`${alerts.map((a, i) => this._renderAlert(a, i))}`;
   }
 
-  _renderAlert(a = {}) {
+  _idForAlert(a, i) {
+    return a?.id ?? `idx-${i}`;
+  }
+
+  _dismissAlert(id) {
+    if (!id) return;
+    this._dismissed.add(id);
+    this.requestUpdate();
+    this.dispatchEvent(
+      new CustomEvent("alert-dismissed", {
+        detail: { id },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  _renderAlert(a = {}, i = 0) {
     const level = ["success", "warning", "error"].includes(a.level)
       ? a.level
       : "info";
+    const id = this._idForAlert(a, i);
     const title = this._short(a.title || "", 80);
     const body = this._short(a.body || "", 200);
+    const showSpinner = !!a.loading;
+    const shimmerBody = !!a.shimmer && !!body;
+
     return html`
-      <div class="alert ${level}">
-        ${title ? html`<div class="title" title=${title}>${title}</div>` : null}
-        ${body ? html`<div class="body">${body}</div>` : null}
+      <div class="alert ${level}" data-id=${id} aria-live="polite">
+        <div class="head">
+          ${showSpinner
+            ? html`<div class="spinner" aria-label="Loading"></div>`
+            : null}
+          ${title
+            ? html`<div class="title" title=${title}>${title}</div>`
+            : null}
+          <button
+            class="close"
+            title="Dismiss"
+            @click=${() => this._dismissAlert(id)}
+          >
+            ×
+          </button>
+        </div>
+        ${body
+          ? shimmerBody
+            ? html`<shimmer-effect
+                ><div class="body">${body}</div></shimmer-effect
+              >`
+            : html`<div class="body">${body}</div>`
+          : null}
       </div>
     `;
   }
