@@ -65,6 +65,12 @@ export function mountChatRoute(
       } else if (force && toolName) {
         tool_choice = { type: "function", function: { name: toolName } };
         tools = toolsArray.filter((t) => t.function.name === toolName);
+        logger.log(JSON.stringify(tools));
+        tools[0].function.parameters.properties.ephemeral_comment = {
+            type: "string",
+            description:"Action description for chat stream; will be shown as a comment in chat describing the action being taken then stripped before tool call",
+        };
+        console.log(tools);
       } else {
         tool_choice = "none";
         tools = [];

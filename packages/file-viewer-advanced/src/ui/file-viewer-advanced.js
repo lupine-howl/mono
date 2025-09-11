@@ -2,6 +2,8 @@
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "@loki/file-browser/util";
 import "@loki/file-browser/ui/file-bundle-bar.js";
+// import "@loki/file-browser/ui/file-bundle-viewer.js"; // replaced by local enhanced viewer
+import "./bundle-viewer-advanced.js";
 import "./file-viewer-cm.js";
 import "./md-viewer.js";
 //import "./csv-viewer.js";
@@ -123,10 +125,10 @@ export class FileViewerAdvanced extends LitElement {
     switch (this._resolved) {
       case "bundle":
         return html`<div class="wrap">
-          <file-bundle-viewer
+          <bundle-viewer-advanced
             .ws=${this._ws}
             .path=${this._path}
-          ></file-bundle-viewer>
+          ></bundle-viewer-advanced>
         </div>`;
       case "md":
         return html`<div class="wrap">
@@ -202,12 +204,23 @@ export class FileViewerAdvanced extends LitElement {
       } else {
         const ext = (this._path.split(".").pop() || "").toLowerCase();
         const isImageExt = [
-          "png","jpg","jpeg","gif","webp","bmp","svg","ico","tif","tiff","avif"
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp",
+          "bmp",
+          "svg",
+          "ico",
+          "tif",
+          "tiff",
+          "avif",
         ].includes(ext);
         if (["md", "markdown", "mdx"].includes(ext)) this._resolved = "md";
         else if (ext === "csv") this._resolved = "csv";
         else if (["html", "htm", "css"].includes(ext)) this._resolved = "html";
-        else if (isImageExt || (this._mime || "").startsWith("image/")) this._resolved = "image";
+        else if (isImageExt || (this._mime || "").startsWith("image/"))
+          this._resolved = "image";
         else if (
           ext === "json" ||
           (this._mime || "").includes("application/json")

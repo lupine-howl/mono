@@ -80,16 +80,61 @@ class FileBrowserService extends EventTarget {
   async select(path, type = "file") {
     this.selection = path ? { path, type } : null;
     this._setStoredSelection(this.selection);
+
     let newFileData = await this.read(path);
-    if (newFileData?.mime === "inode/directory") {
+    const isDir = newFileData?.mime === "inode/directory";
+
+    if (isDir) {
       newFileData = await this.snapshot({ path });
     }
+
     this.fileData = {
       workspace: this.ws,
       path,
       data: newFileData,
     };
-    this.chatService.setContext(this.fileData);
+
+    const isImage = newFileData?.mime?.startsWith("image/");
+    const isText = newFileData?.encoding === "utf8";
+    const isBinary = newFileData?.encoding === "base64";
+    const label = `Workspace: ${this.ws}\nPath: ${path}`;
+
+    // ---------- GPT context decision ----------
+    let context;
+
+    if (isDir) {
+      // Directory snapshot — include file list
+      context = [
+        {
+          type: "text",
+          text: `${label}\n\nThis is a directory snapshot:\n${JSON.stringify(
+            newFileData.files,
+            null,
+            2
+          )}`,
+        },
+      ];
+    } else if (isImage && isBinary) {
+      // Image — send as image_url (for GPT-4o vision)
+      const dataUri = `data:${newFileData.mime};base64,${newFileData.content}`;
+      context = [
+        { type: "text", text: `${label}\n\nHere is the selected image:` },
+        { type: "image_url", image_url: { url: dataUri } },
+      ];
+    } else if (isText) {
+      // Plain text file — send inline
+      context = [{ type: "text", text: `${label}\n\n${newFileData.content}` }];
+    } else {
+      // Binary file (non-image) — show metadata only
+      context = [
+        {
+          type: "text",
+          text: `${label}\n\nFile is binary with mime: ${newFileData.mime}`,
+        },
+      ];
+    }
+
+    this.chatService.setContext(context);
     this._emit("select");
   }
 

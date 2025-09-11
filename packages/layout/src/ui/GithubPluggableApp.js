@@ -278,6 +278,9 @@ export class GithubPluggableApp extends LitElement {
       .workspace {
         display: block;
       }
+      .main {
+        left: 0;
+      }
       .sec-sidebar {
         display: none;
       }

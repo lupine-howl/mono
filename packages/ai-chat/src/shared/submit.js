@@ -9,7 +9,7 @@ export async function submit(svc, prompt) {
   if (!text) return;
 
   const ctx = [];
-  if (svc.state.context) ctx.push(svc.state.context);
+  if (svc.state.context) ctx.push(...svc.state.context);
   if (svc.state.attachments?.length) ctx.push(...svc.state.attachments);
 
   // 1) user message
@@ -21,7 +21,7 @@ export async function submit(svc, prompt) {
   });
 
   // 2 assistant response (placeholder)
-  const requestId = pushMessage(svc, {
+  let requestId = pushMessage(svc, {
     role: "assistant",
     content: "Thinking...",
     kind: "tool_waiting",
@@ -89,13 +89,23 @@ export async function submit(svc, prompt) {
       toolsService.setValues({ ...args });
       svc.set({ toolName: called, toolArgs: { ...args } });
 
-      updateMessage(svc, requestId, {
+      const toolMessage = {
         role: "assistant",
         content: JSON.stringify({ called, args }, null, 2),
         kind: "tool_request",
         name: called,
         args,
-      });
+      };
+      if (args.ephemeral_comment) {
+        updateMessage(svc, requestId, {
+          role: "assistant",
+          content: args.ephemeral_comment,
+          kind: "chat",
+        });
+        requestId = pushMessage(svc, toolMessage);
+      } else {
+        updateMessage(svc, requestId, toolMessage);
+      }
       svc.log("queued tool_request", { requestId, called, args });
 
       if (svc.state.mode === "run") svc.confirmToolRequest(requestId);

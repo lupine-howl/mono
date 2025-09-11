@@ -262,7 +262,7 @@ export class FileTree extends LitElement {
         <div
           class=${`node ${selected ? "selected" : ""}`}
           @click=${(e) => this._onSelectItem(e, item, dirNode.path)}
-          @dblclick=${isDir ? (e) => this._onDblClickDir(e, abs) : null}
+          @dblclick=${isDir ? (e) => this._onDblClickDir(e, item, dirNode.path) : null}
           title=${item.name}
         >
           ${this._indent(depth)}
@@ -309,7 +309,6 @@ export class FileTree extends LitElement {
     this._selectedType = item.type;
     this.requestUpdate();
     this.controller.select(abs, item.type);
-    this.tabController.setActive("code");
   }
 
   async _onToggleCaret(e, abs, item) {
@@ -332,9 +331,14 @@ export class FileTree extends LitElement {
     if (node.open && !node.childrenLoaded) await this._loadDir(abs);
   }
 
-  _onDblClickDir(e, absPath) {
+  _onDblClickDir(e, item, parentPath) {
     e.stopPropagation();
-    this.controller.setCwd(absPath);
+    const abs = this._join(parentPath, item.name);
+    this._selectedPath = abs;
+    this._selectedType = item.type;
+    this.requestUpdate();
+    this.controller.select(abs, item.type);
+    this.tabController.setActive("code");
   }
 
   _refresh = () => {

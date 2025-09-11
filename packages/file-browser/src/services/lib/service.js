@@ -1,4 +1,5 @@
 // fs/service.js
+import sharp from "sharp"; // ← add this at the top of your file
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
@@ -272,6 +273,7 @@ export function createFsService({ workspaces, root } = {}) {
     return { path: rel, items: items.filter(Boolean).sort(sortDirsFirst) };
   }
 
+  // Inside createFsService
   async function fsRead({ ws, path: rel }) {
     const { path: root } = await ensureWs(ws);
     const file = safeJoin(root, rel);
@@ -288,14 +290,38 @@ export function createFsService({ workspaces, root } = {}) {
 
     const mime = mimeFor(file);
     const texty = looksText(file);
+    const isImage = mime.startsWith("image/");
 
+    // Handle text files
     if (texty) {
       const content = await fs.readFile(file, "utf8");
       return { content, mime, encoding: "utf8" };
-    } else {
-      const buf = await fs.readFile(file);
-      return { content: buf.toString("base64"), mime, encoding: "base64" };
     }
+
+    // Handle images using Sharp
+    if (isImage) {
+      try {
+        const buf = await sharp(file)
+          .resize({ width: 800 })
+          .jpeg({ quality: 70 }) // or .png({ quality: 70 }) if you want to preserve type
+          .toBuffer();
+        return {
+          content: buf.toString("base64"),
+          mime: "image/jpeg", // You can keep `mime` or force "image/jpeg"
+          encoding: "base64",
+        };
+      } catch (e) {
+        return { error: e?.message || "Image processing failed" };
+      }
+    }
+
+    // Fallback for other binary files
+    const buf = await fs.readFile(file);
+    return {
+      content: buf.toString("base64"),
+      mime,
+      encoding: "base64",
+    };
   }
 
   async function fsWrite({ ws, path: rel, content = "" }) {

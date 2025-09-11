@@ -35,13 +35,14 @@
     "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
   },
   "dependencies": {
-    "@loki/tasks": "../tasks",
-    "@loki/layout": "../layout",
     "@loki/ai-chat": "../ai-chat",
-    "@loki/minihttp": "../minihttp",
+    "@loki/ai-projects": "../ai-projects",
     "@loki/http-base": "../http-base",
+    "@loki/layout": "../layout",
+    "@loki/minihttp": "../minihttp",
+    "@loki/tasks": "../tasks",
     "@loki/utilities": "../utilities",
-    "@loki/ai-projects": "../ai-projects"
+    "sharp": "^0.34.3"
   },
   "peerDependencies": {
     "lit": "^3.3.1"

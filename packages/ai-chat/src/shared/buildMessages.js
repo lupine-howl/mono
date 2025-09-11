@@ -1,5 +1,10 @@
 // src/shared/services/ai-chat/buildMessages.js
-export function buildChatMessages({ persona, customInstructions, history, context }) {
+export function buildChatMessages({
+  persona,
+  customInstructions,
+  history,
+  context,
+}) {
   const msgs = [];
   const p = (persona ?? "").trim();
   const ci = (customInstructions ?? "").trim();
@@ -10,15 +15,17 @@ export function buildChatMessages({ persona, customInstructions, history, contex
   for (let i = 0; i < H.length; i++) {
     const m = H[i];
     if (m?.role === "user" || m?.role === "assistant" || m?.role === "system") {
-      const content = typeof m.content === "string"
-        ? m.content
-        : m?.content?.toString?.() ?? "";
+      const content =
+        typeof m.content === "string"
+          ? m.content
+          : m?.content?.toString?.() ?? "";
       msgs.push({ role: m.role, content });
     }
   }
 
   if (context && context.length) {
-    const ctx = typeof context === "string" ? context : JSON.stringify(context, null, 2);
+    //const ctx = typeof context === "string" ? context : JSON.stringify(context, null, 2);
+    const ctx = context;
     msgs.push({ role: "system", content: ctx });
   }
   return msgs;

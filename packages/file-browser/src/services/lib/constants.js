@@ -14,6 +14,18 @@ export const DEFAULT_SNAPSHOT_IGNORES = [
 ];
 
 export const EXT_MIME = {
+  // ✅ Image types (NEW)
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".avif": "image/avif",
+
+  // ✅ Document and code types (existing, preserved)
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
   ".markdown": "text/markdown; charset=utf-8",
