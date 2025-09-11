@@ -41,7 +41,8 @@ export async function confirmToolRequest(svc, requestId) {
     kind: req?.kind,
   });
   if (!req || req.kind !== "tool_request") return;
-  const data = typeof req.content === "string" ? safeParse(req.content) : req.content;
+  const data =
+    typeof req.content === "string" ? safeParse(req.content) : req.content;
 
   const name =
     data?.called ||
@@ -49,11 +50,8 @@ export async function confirmToolRequest(svc, requestId) {
     svc.state.toolName ||
     toolsService.get()?.toolName;
   const args =
-    data?.args ??
-    req.args ??
-    svc.state.toolArgs ??
-    toolsService.get()?.values;
-
+    data?.args ?? req.args ?? svc.state.toolArgs ?? toolsService.get()?.values;
+  console.log(name, args);
   svc.log("confirmToolRequest → execute", { name, args });
   await executeTool(svc, name, args, { refId: requestId });
 }

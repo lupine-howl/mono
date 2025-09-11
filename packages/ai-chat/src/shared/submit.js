@@ -4,6 +4,29 @@ import { pushMessage, updateMessage } from "./persistence.js";
 import { safeParse } from "./helpers.js";
 import { toolsService } from "@loki/minihttp/util";
 
+/** Pretty-print friendly rationale from tool_meta */
+function formatToolMeta(meta = {}) {
+  if (!meta || typeof meta !== "object") return null;
+  const { summary, why, key_params, safety, confidence, next } = meta;
+  if (!summary && !why && !key_params && !safety && !next) return null;
+
+  const parts = [];
+  if (summary) parts.push(summary.trim());
+  const bullets = [];
+  /*
+  if (why) bullets.push(`**Why this tool**:\n${why.trim()}`);
+  if (key_params) bullets.push(`**Key inputs**: ${key_params.trim()}`);
+  if (safety) bullets.push(`**Safety/Notes**: ${safety.trim()}`);
+  if (typeof confidence === "number") {
+    bullets.push(`**Confidence**: ${Math.round(confidence * 100)}%`);
+  }
+  */
+  if (next) bullets.push(`**Next**: ${next.trim()}`);
+
+  if (bullets.length) parts.push(bullets.map((b) => `- ${b}`).join("\n"));
+  return parts.join("\n\n");
+}
+
 export async function submit(svc, prompt) {
   const text = String(prompt || "").trim();
   if (!text) return;
@@ -12,7 +35,7 @@ export async function submit(svc, prompt) {
   if (svc.state.context) ctx.push(...svc.state.context);
   if (svc.state.attachments?.length) ctx.push(...svc.state.attachments);
 
-  // 1) user message
+  // user message
   pushMessage(svc, {
     role: "user",
     content: text,
@@ -20,14 +43,13 @@ export async function submit(svc, prompt) {
     attachments: ctx,
   });
 
-  // 2 assistant response (placeholder)
-  let requestId = pushMessage(svc, {
+  // placeholder
+  let placeholderId = pushMessage(svc, {
     role: "assistant",
     content: "Thinking...",
     kind: "tool_waiting",
   });
 
-  // 2) UI intent
   svc.set({ loading: true });
 
   try {
@@ -41,19 +63,15 @@ export async function submit(svc, prompt) {
     const payload = { model: svc.state.model || undefined, messages };
     if (svc.state.mode === "off") payload.tool_choice = "none";
     else if (
-      svc.state.mode === "force" &&
+      ["force", "run"].includes(svc.state.mode) &&
       (svc.state.toolName || toolsService.get()?.toolName)
     ) {
       payload.toolName = svc.state.toolName || toolsService.get()?.toolName;
       payload.force = true;
-    } else if (
-      svc.state.mode === "run" &&
-      (svc.state.toolName || toolsService.get()?.toolName)
-    ) {
-      payload.toolName = svc.state.toolName || toolsService.get()?.toolName;
-      payload.force = true;
-      payload.execute = true;
-    } else if (svc.state.mode === "auto") payload.tool_choice = "auto";
+      if (svc.state.mode === "run") payload.execute = true;
+    } else if (svc.state.mode === "auto") {
+      payload.tool_choice = "auto";
+    }
 
     svc.set({ lastPayload: payload });
     svc.log("submit →", payload);
@@ -69,58 +87,80 @@ export async function submit(svc, prompt) {
 
     svc.set({ aiResult: js });
 
-    if (js.content)
-      updateMessage(svc, requestId, {
+    if (js.content) {
+      updateMessage(svc, placeholderId, {
         role: "assistant",
         content: js.content,
         kind: "chat",
       });
+    }
 
     const called = js?.tool_call?.function?.name || "";
-    const args =
-      js?.args ??
-      (typeof js?.tool_call?.function?.arguments === "string"
-        ? safeParse(js.tool_call.function.arguments)
-        : js?.tool_call?.function?.arguments);
+    // Prefer server-supplied clean args/meta; strip _meta if needed
+    let args = js?.tool_args;
+    let meta = js?.tool_meta;
+
+    if (!args) {
+      const raw =
+        typeof js?.tool_call?.function?.arguments === "string"
+          ? safeParse(js.tool_call.function.arguments)
+          : js?.tool_call?.function?.arguments;
+      if (raw && typeof raw === "object") {
+        const { _meta, ...clean } = raw;
+        args = clean;
+        if (!meta && _meta) meta = _meta;
+      }
+    }
 
     if (called && args && svc.state.mode !== "off") {
-      // Update ToolsService (truth) + optional UI mirrors
+      // ---- STRIP META BEFORE USING ----
+      const { _meta: _discard, ...cleanArgs } = args;
+      args = cleanArgs;
+
       await toolsService.setTool(called);
       toolsService.setValues({ ...args });
       svc.set({ toolName: called, toolArgs: { ...args } });
 
-      const toolMessage = {
-        role: "assistant",
-        content: JSON.stringify({ called, args }, null, 2),
-        kind: "tool_request",
-        name: called,
-        args,
-      };
-      if (args.ephemeral_comment) {
-        updateMessage(svc, requestId, {
+      // show friendly rationale first
+      const metaText = formatToolMeta(meta);
+      if (metaText) {
+        updateMessage(svc, placeholderId, {
           role: "assistant",
-          content: args.ephemeral_comment,
+          content: metaText,
           kind: "chat",
         });
-        requestId = pushMessage(svc, toolMessage);
+        placeholderId = pushMessage(svc, {
+          role: "assistant",
+          content: JSON.stringify({ called, args }, null, 2),
+          kind: "tool_request",
+          name: called,
+          args,
+          meta,
+        });
       } else {
-        updateMessage(svc, requestId, toolMessage);
+        updateMessage(svc, placeholderId, {
+          role: "assistant",
+          content: JSON.stringify({ called, args }, null, 2),
+          kind: "tool_request",
+          name: called,
+          args,
+        });
       }
-      svc.log("queued tool_request", { requestId, called, args });
 
-      if (svc.state.mode === "run") svc.confirmToolRequest(requestId);
-
-      if (Object.prototype.hasOwnProperty.call(js, "executed_result")) {
-        svc.log("server already executed tool", called);
-      } else if (svc.state.autoExecute) {
-        await svc.confirmToolRequest(requestId);
+      if (svc.state.mode === "run") {
+        await svc.confirmToolRequest(placeholderId);
+      } else if (
+        !Object.prototype.hasOwnProperty.call(js, "executed_result") &&
+        svc.state.autoExecute
+      ) {
+        await svc.confirmToolRequest(placeholderId);
       }
     }
   } catch (e) {
     svc.log("submit error", e);
-    updateMessage(svc, requestId, {
+    updateMessage(svc, placeholderId, {
       role: "assistant",
-      content: `⚠️${e}`,
+      content: `⚠️ ${e}`,
       kind: "chat",
     });
   } finally {

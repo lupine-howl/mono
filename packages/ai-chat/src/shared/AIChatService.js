@@ -131,7 +131,6 @@ export class AIChatService extends EventTarget {
     });
   }
   setContext(v) {
-    //console.log("setContext", v);
     this.set({ context: v });
   }
   setCustomInstructions(v) {

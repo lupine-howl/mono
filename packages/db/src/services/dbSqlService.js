@@ -73,14 +73,16 @@ export class DbSqlService {
     const props = schema?.properties || {};
     const columns = Object.entries(props).map(([k, def]) => ({
       name: k,
-      type: mapType(def),
+      type: mapType(def), // "TEXT" for objects (meta), etc.
     }));
+
     const exists = this.db
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
       .get(table);
+
     if (!exists) {
       const pkType = mapType(
-        schema?.properties?.[primaryKey]?.type || primaryType
+        schema?.properties?.[primaryKey] || { type: primaryType }
       );
       const colsSql = [
         `"${primaryKey}" ${pkType} PRIMARY KEY`,
@@ -96,12 +98,37 @@ export class DbSqlService {
         .run();
       return true;
     }
-    const current = new Set(this.pragmaTableInfo(table).map((c) => c.name));
+
+    // --- DEBUG: what do we have vs want? ---
+    const currentInfo = this.pragmaTableInfo(table);
+    const current = new Set(currentInfo.map((c) => c.name));
+    const desired = new Set(columns.map((c) => c.name));
+    // quick sanity print once
+    // console.log(`[db] ${table} current:`, [...current].sort(), 'desired:', [...desired].sort());
+
     for (const c of columns) {
       if (!current.has(c.name)) {
-        this.db
-          .prepare(`ALTER TABLE "${table}" ADD COLUMN "${c.name}" ${c.type}`)
-          .run();
+        // Optionally respect NOT NULL/DEFAULT for new columns:
+        const def = (schema.properties || {})[c.name] || {};
+        const isRequired =
+          Array.isArray(schema.required) && schema.required.includes(c.name);
+        const hasDefault = Object.prototype.hasOwnProperty.call(def, "default");
+        const defaultSql = hasDefault
+          ? ` DEFAULT ${JSON.stringify(def.default)}`
+          : "";
+        // In SQLite, NOT NULL on an added column is only OK if DEFAULT is provided
+        const notNullSql = isRequired && hasDefault ? " NOT NULL" : "";
+
+        const sql = `ALTER TABLE "${table}" ADD COLUMN "${c.name}" ${c.type}${notNullSql}${defaultSql}`;
+        try {
+          this.db.prepare(sql).run();
+          // console.log(`[db] Added column ${table}.${c.name} ${c.type}`);
+        } catch (e) {
+          // Surface the issue so you can see it
+          throw new Error(
+            `Failed to add column ${table}.${c.name}: ${e.message}`
+          );
+        }
       }
     }
     return false;

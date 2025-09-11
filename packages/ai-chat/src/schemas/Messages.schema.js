@@ -6,9 +6,9 @@ export const messagesSchema = {
   additionalProperties: false,
   properties: {
     // identity & grouping
-    id: { type: "string" }, // ulid/uuid (client or server)
-    conversationId: { type: "string" }, // FK to conversations.id
-    idx: { type: "integer", minimum: 0 }, // server-assigned monotonic order
+    id: { type: "string" },
+    conversationId: { type: "string" },
+    idx: { type: "integer", minimum: 0 },
 
     // message semantics
     role: { enum: ["user", "assistant", "system", "tool"] },
@@ -40,21 +40,30 @@ export const messagesSchema = {
     },
     ref: { type: ["string", "null"], description: "Links to request msg.id" },
 
+    // NEW: friendly, user-visible rationale / display-only data
+    meta: {
+      type: ["object", "null"],
+      description:
+        "Display-only friendly rationale/context (e.g., {_meta from tool}). Not sent to executors.",
+      additionalProperties: true, // allow flexible shape
+      default: null,
+    },
+
     attachments: {
       type: ["array", "null"],
       description: "Context items associated with this message",
       default: null,
-      items: {} // empty schema = any type (string, number, object, array, boolean, null)
+      items: {}, // any
     },
 
     // timestamps
-    t: { type: "integer" }, // millis
-    createdAt: { type: "integer" }, // millis
-    updatedAt: { type: "integer" }, // millis
+    t: { type: "integer" },
+    createdAt: { type: "integer" },
+    updatedAt: { type: "integer" },
   },
 
-  // always needed
   required: ["conversationId", "role", "createdAt"],
+
   "x-relations": [
     "Messages",
     "hasOne",

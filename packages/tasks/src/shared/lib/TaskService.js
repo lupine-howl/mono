@@ -1,6 +1,7 @@
 // services/task-service.js
 import { dbDelete, dbInsert, dbSelect, dbUpdate } from "@loki/db/util";
 import { getGlobalSingleton } from "@loki/utilities";
+import { onToolCalled } from "@loki/minihttp/util";
 
 export class TaskService {
   constructor({ table = "tasks", primaryKey = "id" } = {}) {
@@ -20,6 +21,11 @@ export class TaskService {
     // sync guard
     this._rev = 0;
     this._ready = this.sync();
+
+    onToolCalled("dbtasksCreate", ({ args }) => {
+      console.log("[tasks] tool triggered create", args);
+      this.sync();
+    });
   }
 
   // ---------- Observable API ----------

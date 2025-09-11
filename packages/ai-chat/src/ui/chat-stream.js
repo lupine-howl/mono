@@ -174,11 +174,15 @@ export class ChatStream extends LitElement {
     if (kind === "image") {
       return html`<chat-images .message=${m}></chat-images>`;
     } else if (kind === "tool_waiting") {
+      return html`<shimmer-effect>Thinking...</shimmer-effect>`;
       return html`<shimmer-effect>
-        ${this._state.mode==="off"?"Thinking...":html`<chat-tool-request class="msg thinking"         
-        .message=${m}
-        .controller=${this.controller}
-></chat-tool-request>`}
+        ${this._state.mode === "off"
+          ? "Thinking..."
+          : html`<chat-tool-request
+              class="msg thinking"
+              .message=${m}
+              .controller=${this.controller}
+            ></chat-tool-request>`}
       </shimmer-effect>`;
     } else if (kind === "tool_request") {
       return html`<chat-tool-request
