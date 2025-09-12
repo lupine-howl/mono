@@ -21,7 +21,9 @@ export function registerCalendarTools(tools, { table = "events" } = {}) {
         allDay: { type: ["boolean", "null"], default: false },
         start: { anyOf: [{ type: "integer" }, { type: "string" }], description: "Epoch ms or ISO date" },
         end: { anyOf: [{ type: "integer" }, { type: "string" }, { type: "null" }] },
-        calendarId: { type: ["string", "null"] }
+        calendarId: { type: ["string", "null"] },
+        color: { type: ["string", "null"], default: null },
+        recurrence: { anyOf: [{ type: "null" }, { type: "object" }] }
       },
       additionalProperties: false
     },
@@ -37,6 +39,8 @@ export function registerCalendarTools(tools, { table = "events" } = {}) {
         start: toEpoch(args.start) ?? now,
         end: toEpoch(args.end),
         calendarId: args.calendarId ?? null,
+        color: args.color ?? null,
+        recurrence: args.recurrence ?? null,
         createdAt: now,
         updatedAt: now
       };
@@ -65,7 +69,9 @@ export function registerCalendarTools(tools, { table = "events" } = {}) {
               allDay: { type: ["boolean", "null"] },
               start: { anyOf: [{ type: "integer" }, { type: "string" }] },
               end: { anyOf: [{ type: "integer" }, { type: "string" }, { type: "null" }] },
-              calendarId: { type: ["string", "null"] }
+              calendarId: { type: ["string", "null"] },
+              color: { type: ["string", "null"] },
+              recurrence: { anyOf: [{ type: "null" }, { type: "object" }] }
             },
             additionalProperties: false
           }
@@ -87,6 +93,8 @@ export function registerCalendarTools(tools, { table = "events" } = {}) {
           start: toEpoch(e.start) ?? now,
           end: toEpoch(e.end),
           calendarId: e.calendarId ?? null,
+          color: e.color ?? null,
+          recurrence: e.recurrence ?? null,
           createdAt: now,
           updatedAt: now
         };

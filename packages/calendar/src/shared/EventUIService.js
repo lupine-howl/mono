@@ -29,7 +29,7 @@ export class EventUIService {
       where,
       limit: 2000,
       offset: 0,
-      orderBy: '"start" ASC',
+      orderBy: '\"start\" ASC',
     });
     this.store.replaceAll(items);
   }
@@ -47,6 +47,8 @@ export class EventUIService {
       start: toEpoch(input?.start) ?? now,
       end: toEpoch(input?.end),
       calendarId: input?.calendarId ?? null,
+      color: input?.color ?? null,
+      recurrence: input?.recurrence ?? null,
       createdAt: now,
       updatedAt: now,
     };

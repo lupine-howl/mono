@@ -122,6 +122,7 @@ export class CalendarView extends LitElement {
             start: toISOms(ev.start),
             end: toISOms(ev.end),
             allDay: !!ev.allDay,
+            color: ev.color || undefined,
             extendedProps: {
               description: ev.description ?? null,
               location: ev.location ?? null,
@@ -185,6 +186,7 @@ export class CalendarView extends LitElement {
       allDay: !!fcEvent.allDay,
       calendarId:
         (fcEvent.extendedProps?.calendarId ?? this._calendarId) || null,
+      color: fcEvent.backgroundColor || fcEvent.borderColor || undefined,
     };
     await this.ctrl.update(fcEvent.id, patch);
   }
