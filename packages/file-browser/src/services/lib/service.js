@@ -42,187 +42,208 @@ const DEFAULT_WS_SCAN_IGNORES = [
   "__pycache__",
 ];
 
-function makeDynamicWsResolver({
-  root,
-  concurrency = 8,
-  ttlMs = 5000,
-  maxDirs = 20000,
-  maxFiles = 20000,
-  maxDepth = 6,
-  includeHidden = false,
-  extraIgnores = [],
-  // NEW: can be true/false or a number for levels. If undefined, auto-detect.
-  preferShallow,
-  shallowDepth = 3, // default shallow depth: 2 levels (packages/*/*/package.json)
-} = {}) {
-  const resolvedRoot = path.resolve(root);
-
-  async function pickExistingRoot() {
-    const st = await statSafe(resolvedRoot);
-    if (st?.isDirectory()) return resolvedRoot;
-    throw new Error(`Configured workspace root not found: ${resolvedRoot}`);
-  }
-
-  // cache
-  let cache = { at: 0, base: null, results: null, promise: null };
-
-  // NEW: shallow scan up to N levels (BFS), super fast for monorepos
-  async function scanLimitedDepth(base, levels) {
-    const results = new Map();
-    const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
-    const queue = [{ rel: ".", abs: base, depth: 0 }];
-    const seen = new Set();
-
-    while (queue.length) {
-      const { rel, abs, depth } = queue.shift();
-      if (seen.has(abs)) continue;
-      seen.add(abs);
-
-      // 1) if this dir has a package.json, register it
-      try {
-        const txt = await fs.readFile(path.join(abs, "package.json"), "utf8");
-        const pkg = JSON.parse(txt);
-        const id = rel === "." ? "." : rel.replace(/^[.\/]+/, "");
-        const name = pkg?.name || id || path.posix.basename(abs);
-        const wsObj = { id, name, path: abs, readOnly: false };
-        if (!results.has(id)) results.set(id, wsObj);
-        if (pkg?.name && !results.has(pkg.name)) results.set(pkg.name, wsObj);
-      } catch {
-        // no package.json here — OK
-      }
-
-      // 2) descend if we still have depth budget
-      if (depth >= levels) continue;
-      const entries = await fs.readdir(abs, { withFileTypes: true });
-      for (const ent of entries) {
-        if (!ent.isDirectory()) continue;
-        const name = ent.name;
-        if (!includeHidden && name.startsWith(".")) continue;
-        if (ignoreSet.has(name)) continue;
-        const childAbs = path.join(abs, name);
-        const childRel = rel === "." ? name : path.posix.join(rel, name);
-        queue.push({ rel: childRel, abs: childAbs, depth: depth + 1 });
-      }
-    }
-    return results;
-  }
-
-  // existing bounded deep scan for general roots
-  async function scanDeep(base) {
-    const results = new Map();
-    const start = Date.now();
-    const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
-
-    const stop = () => Date.now() - start > ttlMs || results.size >= maxFiles;
-    const depthOf = (rel) =>
-      !rel || rel === "." ? 0 : rel.split("/").length - 1;
-
-    await walkTreeConcurrent(base, ".", {
-      includeHidden,
-      concurrency,
-      followSymlinks: false,
-      stop,
-      shouldSkip: (name, relPath, isDir) => {
-        if (depthOf(relPath) > maxDepth) return true;
-        if (!includeHidden && name.startsWith(".")) return true;
-        if (isDir && ignoreSet.has(name)) return true;
-        return false;
-      },
-      async onDir() {},
-      async onFile(abs, relPath) {
-        if (path.posix.basename(relPath) !== "package.json") return;
-        const dirRel = path.posix.dirname(relPath);
-        const dirAbs = path.join(base, dirRel);
-        try {
-          const txt = await fs.readFile(abs, "utf8");
-          const pkgName = JSON.parse(txt)?.name;
-          const wsObj = {
-            id: dirRel,
-            name: pkgName || path.posix.basename(dirRel),
-            path: dirAbs,
-            readOnly: false,
-          };
-          if (!results.has(dirRel)) results.set(dirRel, wsObj);
-          if (pkgName && !results.has(pkgName)) results.set(pkgName, wsObj);
-        } catch {}
-      },
-    });
-
-    return results;
-  }
-
-  async function scanDynamicWorkspaces() {
-    const base = await pickExistingRoot();
-
-    // cache/coalesce
-    const now = Date.now();
-    if (cache.results && cache.base === base && now - cache.at < ttlMs) {
-      return { base, results: cache.results };
-    }
-    if (cache.promise && cache.base === base) return cache.promise;
-
-    // decide strategy
-    const baseHasPkg = !!(await statSafe(path.join(base, "package.json")));
-    let shallowLevels;
-    if (typeof preferShallow === "number") {
-      shallowLevels = Math.max(0, preferShallow);
-    } else if (preferShallow === true) {
-      shallowLevels = shallowDepth;
-    } else if (preferShallow === false) {
-      shallowLevels = 0;
-    } else {
-      // auto: if base is likely a packages dir or not a package itself → shallow first
-      shallowLevels =
-        path.basename(base) === "packages" || !baseHasPkg ? shallowDepth : 0;
-    }
-
-    cache.base = base;
-    cache.promise = (async () => {
-      let results;
-      if (shallowLevels > 0) {
-        results = await scanLimitedDepth(base, shallowLevels);
-        // fallback to deep if nothing found (unusual structure)
-        if (results.size === 0) results = await scanDeep(base);
-      } else {
-        results = await scanDeep(base);
-      }
-      cache.at = Date.now();
-      cache.results = results;
-      cache.promise = null;
-      return { base, results };
-    })();
-
-    return cache.promise;
-  }
-
-  async function ensureWsDynamic(id) {
-    if (!id) throw new Error("Workspace id required");
-    const { results } = await scanDynamicWorkspaces();
-    const w = results.get(String(id));
-    if (!w) throw new Error(`Unknown workspace: ${id}`);
-    return w;
-  }
-
-  async function fsWorkspacesDynamic() {
-    const { results } = await scanDynamicWorkspaces();
-    const uniq = new Map();
-    for (const w of results.values()) {
-      if (!uniq.has(w.path)) uniq.set(w.path, w);
-    }
-    return {
-      workspaces: Array.from(uniq.values()).map((w) => ({
-        id: w.id,
-        name: w.name,
-        path: w.path,
-        readOnly: !!w.readOnly,
-      })),
-    };
-  }
-
-  return { ensureWsDynamic, fsWorkspacesDynamic };
-}
-
 export function createFsService({ workspaces, root } = {}) {
+  // Helper to summarize package.json into lightweight meta
+  const summarizePkg = (pkg) => ({
+    name: pkg?.name,
+    version: pkg?.version,
+    private: !!pkg?.private,
+    type: pkg?.type,
+    description: pkg?.description,
+    dependencies: Object.keys(pkg?.dependencies || {}).length,
+    devDependencies: Object.keys(pkg?.devDependencies || {}).length,
+    scripts: Object.keys(pkg?.scripts || {}).length,
+  });
+
+  function makeDynamicWsResolver({
+    root,
+    concurrency = 8,
+    ttlMs = 5000,
+    maxDirs = 20000,
+    maxFiles = 20000,
+    maxDepth = 6,
+    includeHidden = false,
+    extraIgnores = [],
+    // NEW: can be true/false or a number for levels. If undefined, auto-detect.
+    preferShallow,
+    shallowDepth = 3, // default shallow depth: 2 levels (packages/*/*/package.json)
+  } = {}) {
+    const resolvedRoot = path.resolve(root);
+
+    async function pickExistingRoot() {
+      const st = await statSafe(resolvedRoot);
+      if (st?.isDirectory()) return resolvedRoot;
+      throw new Error(`Configured workspace root not found: ${resolvedRoot}`);
+    }
+
+    // cache
+    let cache = { at: 0, base: null, results: null, promise: null };
+
+    // NEW: shallow scan up to N levels (BFS), super fast for monorepos
+    async function scanLimitedDepth(base, levels) {
+      const results = new Map();
+      const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
+      const queue = [{ rel: ".", abs: base, depth: 0 }];
+      const seen = new Set();
+
+      while (queue.length) {
+        const { rel, abs, depth } = queue.shift();
+        if (seen.has(abs)) continue;
+        seen.add(abs);
+
+        // 1) if this dir has a package.json, register it
+        try {
+          const txt = await fs.readFile(path.join(abs, "package.json"), "utf8");
+          const pkg = JSON.parse(txt);
+          const id = rel === "." ? "." : rel.replace(/^[.\/]+/, "");
+          const name = pkg?.name || id || path.posix.basename(abs);
+          const wsObj = {
+            id,
+            name,
+            path: abs,
+            readOnly: false,
+            meta: summarizePkg(pkg),
+          };
+          if (!results.has(id)) results.set(id, wsObj);
+          if (pkg?.name && !results.has(pkg.name)) results.set(pkg.name, wsObj);
+        } catch {
+          // no package.json here — OK
+        }
+
+        // 2) descend if we still have depth budget
+        if (depth >= levels) continue;
+        const entries = await fs.readdir(abs, { withFileTypes: true });
+        for (const ent of entries) {
+          if (!ent.isDirectory()) continue;
+          const name = ent.name;
+          if (!includeHidden && name.startsWith(".")) continue;
+          if (ignoreSet.has(name)) continue;
+          const childAbs = path.join(abs, name);
+          const childRel = rel === "." ? name : path.posix.join(rel, name);
+          queue.push({ rel: childRel, abs: childAbs, depth: depth + 1 });
+        }
+      }
+      return results;
+    }
+
+    // existing bounded deep scan for general roots
+    async function scanDeep(base) {
+      const results = new Map();
+      const start = Date.now();
+      const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
+
+      const stop = () => Date.now() - start > ttlMs || results.size >= maxFiles;
+      const depthOf = (rel) =>
+        !rel || rel === "." ? 0 : rel.split("/").length - 1;
+
+      await walkTreeConcurrent(base, ".", {
+        includeHidden,
+        concurrency,
+        followSymlinks: false,
+        stop,
+        shouldSkip: (name, relPath, isDir) => {
+          if (depthOf(relPath) > maxDepth) return true;
+          if (!includeHidden && name.startsWith(".")) return true;
+          if (isDir && ignoreSet.has(name)) return true;
+          return false;
+        },
+        async onDir() {},
+        async onFile(abs, relPath) {
+          if (path.posix.basename(relPath) !== "package.json") return;
+          const dirRel = path.posix.dirname(relPath);
+          const dirAbs = path.join(base, dirRel);
+          try {
+            const txt = await fs.readFile(abs, "utf8");
+            const pkg = JSON.parse(txt);
+            const pkgName = pkg?.name;
+            const wsObj = {
+              id: dirRel,
+              name: pkgName || path.posix.basename(dirRel),
+              path: dirAbs,
+              readOnly: false,
+              meta: summarizePkg(pkg),
+            };
+            if (!results.has(dirRel)) results.set(dirRel, wsObj);
+            if (pkgName && !results.has(pkgName)) results.set(pkgName, wsObj);
+          } catch {}
+        },
+      });
+
+      return results;
+    }
+
+    async function scanDynamicWorkspaces() {
+      const base = await pickExistingRoot();
+
+      // cache/coalesce
+      const now = Date.now();
+      if (cache.results && cache.base === base && now - cache.at < ttlMs) {
+        return { base, results: cache.results };
+      }
+      if (cache.promise && cache.base === base) return cache.promise;
+
+      // decide strategy
+      const baseHasPkg = !!(await statSafe(path.join(base, "package.json")));
+      let shallowLevels;
+      if (typeof preferShallow === "number") {
+        shallowLevels = Math.max(0, preferShallow);
+      } else if (preferShallow === true) {
+        shallowLevels = shallowDepth;
+      } else if (preferShallow === false) {
+        shallowLevels = 0;
+      } else {
+        // auto: if base is likely a packages dir or not a package itself → shallow first
+        shallowLevels =
+          path.basename(base) === "packages" || !baseHasPkg ? shallowDepth : 0;
+      }
+
+      cache.base = base;
+      cache.promise = (async () => {
+        let results;
+        if (shallowLevels > 0) {
+          results = await scanLimitedDepth(base, shallowLevels);
+          // fallback to deep if nothing found (unusual structure)
+          if (results.size === 0) results = await scanDeep(base);
+        } else {
+          results = await scanDeep(base);
+        }
+        cache.at = Date.now();
+        cache.results = results;
+        cache.promise = null;
+        return { base, results };
+      })();
+
+      return cache.promise;
+    }
+
+    async function ensureWsDynamic(id) {
+      if (!id) throw new Error("Workspace id required");
+      const { results } = await scanDynamicWorkspaces();
+      const w = results.get(String(id));
+      if (!w) throw new Error(`Unknown workspace: ${id}`);
+      return w;
+    }
+
+    async function fsWorkspacesDynamic() {
+      const { results } = await scanDynamicWorkspaces();
+      const uniq = new Map();
+      for (const w of results.values()) {
+        if (!uniq.has(w.path)) uniq.set(w.path, w);
+      }
+      return {
+        workspaces: Array.from(uniq.values()).map((w) => ({
+          id: w.id,
+          name: w.name,
+          path: w.path,
+          readOnly: !!w.readOnly,
+          ...(w.meta ? { meta: w.meta } : {}),
+        })),
+      };
+    }
+
+    return { ensureWsDynamic, fsWorkspacesDynamic };
+  }
+
   // Determine mode: static (legacy) vs dynamic (scan by root)
   const isDynamic = !workspaces || Object.keys(workspaces).length === 0;
 
@@ -237,12 +258,26 @@ export function createFsService({ workspaces, root } = {}) {
 
   async function fsWorkspaces() {
     if (isDynamic) return dynamicHelpers.fsWorkspacesDynamic();
+    // static: try to enrich with package.json where possible
+    const entries = Object.entries(workspaces).map(([id, w]) => ({ id, ...w }));
+    const enriched = await Promise.all(
+      entries.map(async (w) => {
+        try {
+          const txt = await fs.readFile(path.join(w.path, "package.json"), "utf8");
+          const pkg = JSON.parse(txt);
+          return { ...w, meta: summarizePkg(pkg) };
+        } catch {
+          return w;
+        }
+      })
+    );
     return {
-      workspaces: Object.entries(workspaces).map(([id, w]) => ({
-        id,
+      workspaces: enriched.map((w) => ({
+        id: w.id,
         name: w.name,
         path: w.path,
         readOnly: !!w.readOnly,
+        ...(w.meta ? { meta: w.meta } : {}),
       })),
     };
   }
