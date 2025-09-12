@@ -23,7 +23,8 @@ function mergeComponents(...packs) {
     ...out,
   };
 }
-const toTabs = (arr) => arr.map(({ id, label }) => ({ id, label }));
+const toTabs = (arr) =>
+  arr.map(({ id, label, noTab }) => ({ id, label, noTab }));
 
 export class GithubPluggableApp extends LitElement {
   static properties = {
@@ -283,7 +284,7 @@ export class GithubPluggableApp extends LitElement {
       gap: 8px;
       padding: 8px;
       pointer-events: auto;
-      font-size:0.9em;
+      font-size: 0.9em;
     }
     .alerts > * {
       /* children can render their own visuals */
@@ -394,17 +395,19 @@ export class GithubPluggableApp extends LitElement {
 
     return html`
       <div class="tabs-scroll" role="tablist" aria-label="Main content tabs">
-        ${items.map(
-          (t) => html`
-            <button
-              class="tab"
-              role="tab"
-              aria-selected=${String(active === t.id)}
-              @click=${() => this.tabController.setActive(t.id)}
-            >
-              ${t.label}
-            </button>
-          `
+        ${items.map((t) =>
+          t.noTab
+            ? ""
+            : html`
+                <button
+                  class="tab"
+                  role="tab"
+                  aria-selected=${String(active === t.id)}
+                  @click=${() => this.tabController.setActive(t.id)}
+                >
+                  ${t.label}
+                </button>
+              `
         )}
       </div>
     `;

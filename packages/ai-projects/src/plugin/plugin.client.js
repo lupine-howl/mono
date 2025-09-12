@@ -59,6 +59,7 @@ export default ({ components }) => {
       {
         id: `${ns}:project`,
         label: "📁 Project",
+        noTab:true,
         order: 2,
         render: () => html`<project-viewer></project-viewer>`,
         left: [

@@ -26,6 +26,7 @@ export default ({ components }) => {
         label: "Event",
         order: 21,
         wrapperStyle: "card",
+        noTab:true,
         render: () => html`<event-viewer></event-viewer>`,
         left: [
           {

@@ -11,6 +11,7 @@ export default ({ components }) => {
         label: "📝 Task",
         order: 20,
         wrapperStyle: "card",
+        noTab:true,
         render: () => html`<task-viewer></task-viewer>`,
       },
       {
