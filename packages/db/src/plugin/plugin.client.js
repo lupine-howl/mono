@@ -7,12 +7,6 @@ export default ({ components }) => {
   const ns = "db";
   components.push({
     sidebar: [
-      {
-        id: `${ns}:browser`,
-        label: "🗄️ DB Browser",
-        order: 30,
-        render: () => html`<db-browser></db-browser>`,
-      },
     ],
     body: [
       {
@@ -20,6 +14,13 @@ export default ({ components }) => {
         label: "📊 DB",
         order: 30,
         render: () => html`<db-viewer></db-viewer>`,
+        left:[      {
+        id: `${ns}:browser`,
+        label: "🗄️ DB Browser",
+        order: 30,
+        render: () => html`<db-browser></db-browser>`,
+      },
+]
       },
     ],
   });

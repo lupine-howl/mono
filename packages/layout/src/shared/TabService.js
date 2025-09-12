@@ -98,3 +98,10 @@ export function getTabService(opts = {}) {
   return getGlobalSingleton(KEY, () => new TabService(opts));
 }
 export const tabService = getTabService();
+
+export function setActiveTab(id) {
+  tabService.setActive(id);
+}
+export function nextTab() {
+  tabService.next();
+}
