@@ -15,9 +15,10 @@ export class EventUIService {
     this.table = table;
     this.pk = "id";
     this.store = getEventStore();
-    rpc.onCall("createEvent", ({ args: ev }) => {
-      console.log("createEvent received via RPC:", ev);
-      this.store.upsertOne(ev);
+    rpc.onCall("createEvent", ({result}) => {
+      console.log("createEvent received via RPC:", result);
+      const values = result?.values;
+      this.store.upsertOne(values);
     });
   }
 
