@@ -10,15 +10,28 @@ function toEpoch(value) {
   return Number.isFinite(t) ? t : null;
 }
 
+function decodeEventRow(row) {
+  const ev = { ...row };
+  // If recurrence is stored as JSON text, parse it
+  if (typeof ev.recurrence === "string") {
+    try {
+      ev.recurrence = JSON.parse(ev.recurrence);
+    } catch {
+      /* ignore */
+    }
+  }
+  return ev;
+}
+
 export class EventUIService {
   constructor({ table = "events" } = {}) {
     this.table = table;
     this.pk = "id";
     this.store = getEventStore();
-    rpc.onCall("createEvent", ({result}) => {
+    rpc.onCall("createEvent", ({ result }) => {
       console.log("createEvent received via RPC:", result);
       const values = result?.values;
-      this.store.upsertOne(values);
+      this.store.upsertOne(decodeEventRow(values));
     });
   }
 
@@ -29,9 +42,9 @@ export class EventUIService {
       where,
       limit: 2000,
       offset: 0,
-      orderBy: '\"start\" ASC',
+      orderBy: '"start" ASC',
     });
-    this.store.replaceAll(items);
+    this.store.replaceAll(items.map(decodeEventRow));
   }
 
   async createOne(input) {
