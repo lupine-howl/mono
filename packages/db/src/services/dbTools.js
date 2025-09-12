@@ -17,6 +17,44 @@ export function registerDbTools(
     properties: {},
     additionalProperties: false,
   };
+
+  // --- lightweight decoding using provided JSON Schemas ---
+  const pickType = (def) => {
+    let t = def?.type;
+    if (Array.isArray(t)) t = t.find((x) => x && x !== "null") ?? t[0];
+    return (t && String(t).toLowerCase()) || "string";
+  };
+  const decodeRow = (table, row) => {
+    try {
+      const schema = schemas?.[table];
+      if (!schema?.properties || !row) return row;
+      const props = schema.properties;
+      const out = { ...row };
+      for (const [k, def] of Object.entries(props)) {
+        const v = out[k];
+        if (v === undefined || v === null) continue;
+        const t = pickType(def);
+        if (t === "boolean" || t === "bool") {
+          // Normalize 0/1 (or "0"/"1") back to booleans
+          if (v === 0 || v === 1) out[k] = !!v;
+          else if (v === "0" || v === "1") out[k] = v === "1";
+        } else if (t === "object" || t === "array" || t === "json") {
+          if (typeof v === "string") {
+            try {
+              out[k] = JSON.parse(v);
+            } catch {
+              // leave as-is if not valid JSON
+            }
+          }
+        }
+      }
+      return out;
+    } catch {
+      return row;
+    }
+  };
+  const decodeRows = (table, rows) => Array.isArray(rows) ? rows.map((r) => decodeRow(table, r)) : rows;
+
   tools.define({
     name: "dbListTables",
     description: "List database tables",
@@ -61,7 +99,10 @@ export function registerDbTools(
       properties: { table: { type: "string" }, values: { type: "object" } },
       additionalProperties: false,
     },
-    handler: ({ table, values }) => ({ item: svc.insert(table, values) }),
+    handler: ({ table, values }) => {
+      const item = svc.insert(table, values);
+      return { item: decodeRow(table, item) };
+    },
     tags: tag,
   });
   tools.define({
@@ -77,7 +118,10 @@ export function registerDbTools(
       },
       additionalProperties: false,
     },
-    handler: ({ table, id, patch }) => ({ item: svc.update(table, id, patch) }),
+    handler: ({ table, id, patch }) => {
+      const item = svc.update(table, id, patch);
+      return { item: decodeRow(table, item) };
+    },
     tags: tag,
   });
   tools.define({
@@ -115,7 +159,8 @@ export function registerDbTools(
       offset = 0,
       orderBy = null,
     }) => {
-      return { items: svc.select(table, { where, limit, offset, orderBy }) };
+      const items = svc.select(table, { where, limit, offset, orderBy });
+      return { items: decodeRows(table, items) };
     },
     tags: tag,
   });

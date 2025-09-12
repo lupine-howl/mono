@@ -11,24 +11,22 @@ export const eventsSchema = {
     calendarId: { type: ["string", "null"] },
     color: { type: ["string", "null"], description: "CSS color for event" },
     recurrence: {
-      anyOf: [
-        { type: "null" },
-        {
-          type: "object",
-          properties: {
-            freq: { enum: ["daily", "weekly", "monthly"] },
-            interval: { type: "integer", minimum: 1 },
-            byWeekday: { type: "array", items: { type: "integer", minimum: 0, maximum: 6 } },
-            count: { type: ["integer", "null"], minimum: 1 },
-            until: { type: ["integer", "null"], description: "Epoch ms" }
-          },
-          required: ["freq", "interval"],
-          additionalProperties: true
-        }
-      ]
+      type: "object",
+      properties: {
+        freq: { enum: ["daily", "weekly", "monthly"] },
+        interval: { type: "integer", minimum: 1 },
+        byWeekday: {
+          type: "array",
+          items: { type: "integer", minimum: 0, maximum: 6 },
+        },
+        count: { type: ["integer", "null"], minimum: 1 },
+        until: { type: ["integer", "null"], description: "Epoch ms" },
+      },
+      required: ["freq", "interval"],
+      additionalProperties: true,
     },
     createdAt: { type: "integer" },
-    updatedAt: { type: "integer" }
+    updatedAt: { type: "integer" },
   },
-  required: ["title", "start"]
+  required: ["title", "start"],
 };
