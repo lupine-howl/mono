@@ -4,12 +4,9 @@ import { AIChatController } from "../shared/AIChatController.js";
 
 /**
  * <chat-alerts>
- * Fixed right overlay panel that shows compact alerts.
- * - Width matches left sidebar via --sidebar-width, default 300px
- * - Sits above the composer via --composer-height (or --alerts-bottom)
- * - Accepts alerts=[], or derives compact alerts from the current chat state
- * - Supports a loading state with shimmer and an optional spinner
- * - Individual alerts are dismissible (×) and show a spinner if their group is waiting
+ * - spinner -> ✓ when loading finishes
+ * - auto-dismiss 5s after completion, with fade-out
+ * - NEW: on first load, dismiss all existing alerts so only new ones show
  */
 export class ChatAlerts extends LitElement {
   static properties = {
@@ -20,7 +17,7 @@ export class ChatAlerts extends LitElement {
 
   constructor() {
     super();
-    this.alerts = undefined; // If undefined, we derive from controller
+    this.alerts = undefined;
     this.loading = false;
     this.maxItems = 6;
 
@@ -28,45 +25,51 @@ export class ChatAlerts extends LitElement {
     this._state = this._controller.get?.() ?? {};
     this._unsubscribe = this._controller.subscribe?.((st) => {
       this._state = st;
-      // only re-render if using derived alerts
       if (this.alerts === undefined) this.requestUpdate();
     });
 
-    // Track dismissed alerts by id
+    // Dismissed + state trackers
     this._dismissed = new Set();
+
+    this._wasLoading = new Map(); // id -> previous loading
+    this._completed = new Set(); // ids that just completed (show ✓)
+    this._fadeOut = new Set(); // ids currently fading
+    this._timers = new Map(); // id -> {hideTimer, fadeTimer}
+
+    // New: only run the "dismiss everything current" once
+    this._baselineDone = false;
   }
 
   disconnectedCallback() {
     this._unsubscribe?.();
+    for (const { hideTimer, fadeTimer } of this._timers.values()) {
+      if (hideTimer) clearTimeout(hideTimer);
+      if (fadeTimer) clearTimeout(fadeTimer);
+    }
+    this._timers.clear();
     super.disconnectedCallback();
   }
 
   static styles = css`
-    /* Ensure padding/border don't cause overflow */
     :host,
     *,
     *::before,
     *::after {
       box-sizing: border-box;
     }
-
     :host {
       display: grid;
       gap: 8px;
       align-content: end;
       overflow: auto;
       padding: 8px;
-      background: rgba(100, 100, 100, 0.1); /* testing visibility */
+      background: rgba(100, 100, 100, 0.1);
       z-index: 1000;
-
-      /* Fluid width up to a cap (defaults to 300px) */
       width: 100%;
       max-width: var(--alerts-max-width, var(--sidebar-width, 300px));
-
       scrollbar-width: thin;
       scrollbar-color: #444 #0b0b0c;
     }
-
     :host::-webkit-scrollbar {
       width: 8px;
     }
@@ -87,15 +90,19 @@ export class ChatAlerts extends LitElement {
       display: grid;
       gap: 6px;
       color: inherit;
-
-      /* Prevent any child from forcing overflow */
       width: 100%;
       max-width: 100%;
       min-width: 0;
       overflow: hidden;
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    .alert.fade-out {
+      opacity: 0;
+      transform: translateY(4px);
     }
 
-    /* Levels (typical alert look) */
     .info {
       border-color: #204060;
       background: #0e1a24;
@@ -117,9 +124,8 @@ export class ChatAlerts extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      min-width: 0; /* allow children to shrink */
+      min-width: 0;
     }
-
     .title {
       font-size: 12px;
       font-weight: 600;
@@ -128,7 +134,7 @@ export class ChatAlerts extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       min-width: 0;
-      flex: 1 1 auto; /* take remaining space and allow shrinking */
+      flex: 1 1 auto;
     }
     .body {
       font-size: 13px;
@@ -137,11 +143,9 @@ export class ChatAlerts extends LitElement {
       -webkit-line-clamp: 3;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      /* break long unbroken strings/URLs */
       overflow-wrap: anywhere;
       word-break: break-word;
     }
-
     .spinner {
       width: 14px;
       height: 14px;
@@ -157,6 +161,24 @@ export class ChatAlerts extends LitElement {
       }
     }
 
+    .tick {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tick svg {
+      width: 16px;
+      height: 16px;
+      stroke: #6be675;
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
     .close {
       margin-left: auto;
       border: 1px solid #2a2a30;
@@ -168,16 +190,14 @@ export class ChatAlerts extends LitElement {
       border-radius: 6px;
       cursor: pointer;
       line-height: 1;
-      flex: 0 0 auto; /* don't shrink below its size */
+      flex: 0 0 auto;
     }
 
-    /* Shimmer should respect container width */
     shimmer-effect {
       display: block;
       width: 100%;
       max-width: 100%;
     }
-
     .skeleton {
       position: relative;
       overflow: hidden;
@@ -197,6 +217,18 @@ export class ChatAlerts extends LitElement {
     }
   `;
 
+  // Dismiss all alerts currently present (runs once)
+  _baselineDismiss() {
+    if (this._baselineDone) return;
+    const current = (this.alerts ?? this._deriveAlertsFromState()) || [];
+    for (let i = 0; i < current.length; i++) {
+      const id = this._idForAlert(current[i], i);
+      if (id) this._dismissed.add(id);
+    }
+    this._baselineDone = true;
+    this.requestUpdate();
+  }
+
   // Build compact alerts from chat state, if no alerts prop is supplied
   _deriveAlertsFromState() {
     const msgs = Array.isArray(this._state?.messages)
@@ -204,7 +236,6 @@ export class ChatAlerts extends LitElement {
       : [];
     if (!msgs.length) return [];
 
-    // Index children by parentId
     const byParent = new Map();
     for (const m of msgs) {
       if (m.parentId) {
@@ -218,7 +249,6 @@ export class ChatAlerts extends LitElement {
       if (m.role === "user" && (m.parentId == null || m.parentId === "")) {
         const children = (byParent.get(m.id) || []).filter(Boolean);
         const waiting = children.some((c) => c?.kind === "tool_waiting");
-        // Prefer the last assistant-like child for the body
         const resp = [...children]
           .reverse()
           .find(
@@ -240,8 +270,6 @@ export class ChatAlerts extends LitElement {
         });
       }
     }
-
-    // Most recent first
     alerts.reverse();
     return alerts.slice(0, this.maxItems);
   }
@@ -253,11 +281,13 @@ export class ChatAlerts extends LitElement {
   }
 
   render() {
+    // Ensure we baseline-dismiss once we can compute the current list
+    if (!this._baselineDone) this._baselineDismiss();
+
     const alerts = (this.alerts ?? this._deriveAlertsFromState()).filter(
-      (a) => !this._dismissed.has(a?.id)
+      (a, i) => !this._dismissed.has(this._idForAlert(a, i))
     );
 
-    // Loading state: shimmer blocks + optional spinners
     if (this.loading) {
       return html`
         <div class="alert skeleton info">
@@ -280,13 +310,81 @@ export class ChatAlerts extends LitElement {
     return html`${alerts.map((a, i) => this._renderAlert(a, i))}`;
   }
 
+  updated(changed) {
+    // If alerts prop was undefined and becomes defined later, we still want baseline once.
+    if (!this._baselineDone) this._baselineDismiss();
+
+    // After each render, detect loading -> done transitions and schedule auto-dismiss
+    const alerts = (this.alerts ?? this._deriveAlertsFromState()).filter(
+      (a, i) => !this._dismissed.has(this._idForAlert(a, i))
+    );
+
+    for (let i = 0; i < alerts.length; i++) {
+      const a = alerts[i] || {};
+      const id = this._idForAlert(a, i);
+      const isLoading = !!a.loading;
+      const wasLoading = this._wasLoading.get(id) ?? false;
+
+      this._wasLoading.set(id, isLoading);
+
+      // loading -> done
+      if (wasLoading && !isLoading && !this._completed.has(id)) {
+        this._completed.add(id);
+        this.requestUpdate(); // show ✓ immediately
+        this._scheduleAutoDismiss(id, 5000);
+      }
+    }
+
+    // Clean up trackers for alerts that disappeared
+    const liveIds = new Set(alerts.map((a, i) => this._idForAlert(a, i)));
+    for (const id of [...this._wasLoading.keys()]) {
+      if (!liveIds.has(id)) {
+        this._wasLoading.delete(id);
+        this._completed.delete(id);
+        this._fadeOut.delete(id);
+        const timers = this._timers.get(id);
+        if (timers?.hideTimer) clearTimeout(timers.hideTimer);
+        if (timers?.fadeTimer) clearTimeout(timers.fadeTimer);
+        this._timers.delete(id);
+      }
+    }
+  }
+
+  _scheduleAutoDismiss(id, ms = 5000) {
+    if (this._timers.get(id)?.hideTimer) return;
+
+    const hideTimer = setTimeout(() => {
+      this._fadeOut.add(id);
+      this.requestUpdate();
+
+      const fadeTimer = setTimeout(() => {
+        this._dismissAlert(id);
+        const t = this._timers.get(id);
+        if (t?.fadeTimer) clearTimeout(t.fadeTimer);
+        this._timers.delete(id);
+      }, 380);
+
+      this._timers.set(id, { ...(this._timers.get(id) || {}), fadeTimer });
+    }, ms);
+
+    this._timers.set(id, { ...(this._timers.get(id) || {}), hideTimer });
+  }
+
   _idForAlert(a, i) {
     return a?.id ?? `idx-${i}`;
   }
 
   _dismissAlert(id) {
     if (!id) return;
+    const t = this._timers.get(id);
+    if (t?.hideTimer) clearTimeout(t.hideTimer);
+    if (t?.fadeTimer) clearTimeout(t.fadeTimer);
+    this._timers.delete(id);
+
     this._dismissed.add(id);
+    this._completed.delete(id);
+    this._fadeOut.delete(id);
+    this._wasLoading.delete(id);
     this.requestUpdate();
     this.dispatchEvent(
       new CustomEvent("alert-dismissed", {
@@ -304,14 +402,27 @@ export class ChatAlerts extends LitElement {
     const id = this._idForAlert(a, i);
     const title = this._short(a.title || "", 80);
     const body = this._short(a.body || "", 200);
-    const showSpinner = !!a.loading;
     const shimmerBody = !!a.shimmer && !!body;
 
+    const isLoading = !!a.loading;
+    const showTick = !isLoading && this._completed.has(id);
+    const fading = this._fadeOut.has(id);
+
     return html`
-      <div class="alert ${level}" data-id=${id} aria-live="polite">
+      <div
+        class="alert ${level} ${fading ? "fade-out" : ""}"
+        data-id=${id}
+        aria-live="polite"
+      >
         <div class="head">
-          ${showSpinner
+          ${isLoading
             ? html`<div class="spinner" aria-label="Loading"></div>`
+            : showTick
+            ? html`<span class="tick" aria-label="Completed">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M20 6L9 17l-5-5"></path>
+                </svg>
+              </span>`
             : null}
           ${title
             ? html`<div class="title" title=${title}>${title}</div>`
