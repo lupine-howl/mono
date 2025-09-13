@@ -24,7 +24,7 @@ export default ({ components }) => {
       },
       {
         id: `tool-directory`,
-        label: "🧰 Tool Directory",
+        label: "🧰 Tools",
         order: 31,
         render: () => html`<tool-directory></tool-directory>`,
         left: [

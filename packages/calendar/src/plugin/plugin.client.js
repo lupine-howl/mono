@@ -8,7 +8,7 @@ export default ({ components }) => {
     body: [
       {
         id: "calendar:view",
-        label: "Calendar",
+        label: "📅 Calendar",
         order: 20,
         wrapperStyle: "card",
         render: () => html`<calendar-view></calendar-view>`,

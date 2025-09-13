@@ -112,6 +112,7 @@ export class FileViewerAdvanced extends LitElement {
     if (this._loading) return html`<div class="hint">Loading…</div>`;
     if (this._error) return html`<div class="hint">Error: ${this._error}</div>`;
 
+    /*
     if (this._path.endsWith("package.json")) {
       return html`<div class="wrap">
         <package-viewer
@@ -121,7 +122,7 @@ export class FileViewerAdvanced extends LitElement {
         ></package-viewer>
       </div>`;
     }
-
+    */
     switch (this._resolved) {
       case "bundle":
         return html`<div class="wrap">

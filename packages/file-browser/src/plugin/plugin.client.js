@@ -10,7 +10,7 @@ export default ({ components }) => {
   components.push({
     body: [      {
         id: `${ns}:workspace-directory`,
-        label: "📚 Workspace Directory",
+        label: "📚 Workspaces",
         order: 25,
         render: () => html`<workspace-directory></workspace-directory>`,
       },
