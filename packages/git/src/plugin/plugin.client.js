@@ -13,7 +13,7 @@ export default ({ components }) => {
     body: [
       {
         id: `${ns}:history`,
-        label: "📜 History",
+        label: "🔁 Git",
         order: 31,
         render: () => html`<git-history></git-history>`,
         left: [
@@ -39,15 +39,21 @@ export default ({ components }) => {
       },
       {
         id: `${ns}:code`,
-        label: "📄 Code",
+        label: "{ } Code",
         order: 31,
         render: () => html`<file-viewer-advanced></file-viewer-advanced>`,
         left: [
           {
-            id: `${ns}:sync`,
-            label: "🔁 Sync",
-            order: 12,
-            render: () => html`<git-sync></git-sync>`,
+            id: `code:workspace-select`,
+            label: "📁 Workspaces",
+            order: 30,
+            render: () => html`<workspace-select></workspace-select>`,
+          },
+          {
+            id: `code:browser`,
+            label: "📁 Files",
+            order: 30,
+            render: () => html`<file-browser></file-browser>`,
           },
           {
             id: `${ns}:staged`,

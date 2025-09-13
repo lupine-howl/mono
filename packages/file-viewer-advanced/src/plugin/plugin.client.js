@@ -9,7 +9,7 @@ export default ({ components }) => {
     body: [
       {
         id: `code`,
-        label: "📄 Code",
+        label: "모 Code",
         order: 30,
         render: () => html`<file-viewer-advanced></file-viewer-advanced>`,
         left: [

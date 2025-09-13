@@ -8,7 +8,7 @@ export default ({ components }) => {
     body: [
       {
         id: `tasks:viewer`,
-        label: "📝 Task",
+        label: "📋 Task",
         order: 20,
         wrapperStyle: "card",
         noTab:true,
@@ -16,7 +16,7 @@ export default ({ components }) => {
       },
       {
         id: `tasks:list`,
-        label: "📋 Tasks",
+        label: "⌛ Tasks",
         order: 10,
         wrapperStyle: "card",
         render: () => html`<task-list></task-list>`,
