@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "@loki/file-browser/util";
-import { gitLog, gitDiff } from "../shared/gitClient.js";
+import { GitController } from "../shared/GitController.js";
 
 export class GitHistory extends LitElement {
   static styles = css`
@@ -76,13 +76,16 @@ export class GitHistory extends LitElement {
 
   constructor() {
     super();
-    this.controller = new FileBrowserController({ eventName: "files:change" });
-    this._ws = this.controller.ws || "";
+    this.fb = new FileBrowserController({ eventName: "files:change" });
+    this.ctrl = new GitController(this);
+
+    this._ws = this.fb.ws || "";
     this._list = [];
     this._sel = null;
     this._diff = "";
     this._loading = false;
     this._err = null;
+
     this._onChange = (e) => {
       const { ws } = e.detail || {};
       if (ws) {
@@ -90,12 +93,17 @@ export class GitHistory extends LitElement {
         this._fetch();
       }
     };
-    this.controller.addEventListener("files:change", this._onChange);
+    this.fb.addEventListener("files:change", this._onChange);
   }
 
   connectedCallback() {
     super.connectedCallback();
     this._fetch();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.fb.removeEventListener?.("files:change", this._onChange);
   }
 
   render() {
@@ -137,8 +145,8 @@ export class GitHistory extends LitElement {
     this._loading = true;
     this._err = null;
     try {
-      const j = await gitLog({ ws: this._ws, max: 100 });
-      this._list = j.items || [];
+      const items = await this.ctrl.log(this._ws, { max: 100 });
+      this._list = items || [];
       if (this._list.length) this._select(this._list[0]);
     } catch (e) {
       this._err = e?.message || String(e);
@@ -152,8 +160,8 @@ export class GitHistory extends LitElement {
     this._diff = "";
     this._err = null;
     try {
-      const r = await gitDiff({ ws: this._ws, commit: c.hash });
-      this._diff = r.diff || "";
+      const diffText = await this.ctrl.diff(this._ws, { commit: c.hash });
+      this._diff = diffText || "";
     } catch (e) {
       this._err = e?.message || String(e);
     }

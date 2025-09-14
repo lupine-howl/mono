@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "@loki/file-browser/util";
-import { gitCommit, gitAdd } from "../shared/gitClient.js";
+import { GitController } from "../shared/GitController.js";
 
 export class GitCommit extends LitElement {
   static styles = css`
@@ -57,17 +57,26 @@ export class GitCommit extends LitElement {
 
   constructor() {
     super();
-    this.controller = new FileBrowserController({ eventName: "files:change" });
-    this._ws = this.controller.ws || "";
+    // Use FB controller just to keep tracking current workspace
+    this.fb = new FileBrowserController({ eventName: "files:change" });
+    this.ctrl = new GitController(this);
+
+    this._ws = this.fb.ws || "";
     this._subject = "";
     this._body = "";
     this._loading = false;
     this._msg = "";
+
     this._onChange = (e) => {
       const { ws } = e.detail || {};
       if (ws) this._ws = ws;
     };
-    this.controller.addEventListener("files:change", this._onChange);
+    this.fb.addEventListener("files:change", this._onChange);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.fb.removeEventListener?.("files:change", this._onChange);
   }
 
   render() {
@@ -102,15 +111,13 @@ export class GitCommit extends LitElement {
     this._loading = true;
     this._msg = "";
     try {
-      // Auto-stage everything before committing (no manual staging overhead)
-      await gitAdd({ ws: this._ws, all: true });
-      const res = await gitCommit({
-        ws: this._ws,
+      // Stage everything, then commit — through the Git UI service
+      await this.ctrl.add(this._ws, { all: true });
+      const output = await this.ctrl.commit(this._ws, {
         subject: this._subject,
         body: this._body,
       });
-      if (res?.error) throw new Error(res.error);
-      this._msg = "Commit created.";
+      this._msg = output && output.trim() ? output : "Commit created.";
       this._subject = "";
       this._body = "";
       this.dispatchEvent(

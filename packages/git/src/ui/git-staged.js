@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "@loki/file-browser/util";
-import { gitStatus } from "../shared/gitClient.js";
+import { GitController } from "../shared/GitController.js";
 
 // Simplified changes viewer (no staging). Untracked files are hidden.
 export class GitStaged extends LitElement {
@@ -67,8 +67,10 @@ export class GitStaged extends LitElement {
 
   constructor() {
     super();
-    this.controller = new FileBrowserController({ eventName: "files:change" });
-    this._ws = this.controller.ws || "";
+    this.fb = new FileBrowserController({ eventName: "files:change" });
+    this.ctrl = new GitController(this);
+
+    this._ws = this.fb.ws || "";
     this._loading = false;
     this._err = null;
     this._changes = [];
@@ -83,7 +85,7 @@ export class GitStaged extends LitElement {
         this._fetch();
       }
     };
-    this.controller.addEventListener("files:change", this._onChange);
+    this.fb.addEventListener("files:change", this._onChange);
   }
 
   connectedCallback() {
@@ -93,7 +95,7 @@ export class GitStaged extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.controller.removeEventListener?.("files:change", this._onChange);
+    this.fb.removeEventListener?.("files:change", this._onChange);
   }
 
   render() {
@@ -106,11 +108,11 @@ export class GitStaged extends LitElement {
         >
           Refresh
         </button>
-        <span class="hint"
-          >${this._branch
+        <span class="hint">
+          ${this._branch
             ? `branch: ${this._branch} (+${this._ahead}/-${this._behind})`
-            : ""}</span
-        >
+            : ""}
+        </span>
         <span class="hint" style="margin-left:auto;"
           >Shows tracked changes only</span
         >
@@ -132,15 +134,15 @@ export class GitStaged extends LitElement {
     this._loading = true;
     this._err = null;
     try {
-      const j = await gitStatus({ ws: this._ws });
+      const j = await this.ctrl.status(this._ws);
       // Combine staged + unstaged so users still see pending changes even if staged externally.
       const staged = Array.isArray(j?.staged) ? j.staged : [];
       const unstaged = Array.isArray(j?.unstaged) ? j.unstaged : [];
       const set = new Set([...unstaged, ...staged]);
       this._changes = Array.from(set);
-      this._branch = j.branch || "";
-      this._ahead = j.ahead || 0;
-      this._behind = j.behind || 0;
+      this._branch = j?.branch || "";
+      this._ahead = Number(j?.ahead || 0);
+      this._behind = Number(j?.behind || 0);
     } catch (e) {
       this._err = e?.message || String(e);
     } finally {
