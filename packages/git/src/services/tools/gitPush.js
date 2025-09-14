@@ -1,5 +1,4 @@
-
-import { runGit, getCwd, currentBranch } from "../helpers.js";
+import { runGit, getCwd, currentBranch } from "./helpers.js";
 
 export const gitPush = {
   name: "gitPush",

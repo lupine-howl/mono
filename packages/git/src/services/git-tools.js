@@ -1,16 +1,16 @@
 import { configureFs } from "@loki/file-browser";
 
 // Import command specs
-import { gitStatus } from "./commands/gitStatus.js";
-import { gitAdd } from "./commands/gitAdd.js";
-import { gitRestore } from "./commands/gitRestore.js";
-import { gitCommit } from "./commands/gitCommit.js";
-import { gitLog } from "./commands/gitLog.js";
-import { gitDiff } from "./commands/gitDiff.js";
-import { gitBranchList } from "./commands/gitBranchList.js";
-import { gitCheckout } from "./commands/gitCheckout.js";
-import { gitPush } from "./commands/gitPush.js";
-import { gitPull } from "./commands/gitPull.js";
+import { gitStatus } from "./tools/gitStatus.js";
+import { gitAdd } from "./tools/gitAdd.js";
+import { gitRestore } from "./tools/gitRestore.js";
+import { gitCommit } from "./tools/gitCommit.js";
+import { gitLog } from "./tools/gitLog.js";
+import { gitDiff } from "./tools/gitDiff.js";
+import { gitBranchList } from "./tools/gitBranchList.js";
+import { gitCheckout } from "./tools/gitCheckout.js";
+import { gitPush } from "./tools/gitPush.js";
+import { gitPull } from "./tools/gitPull.js";
 
 export function registerGitTools(tools, { root } = {}) {
   // Configure FS root once (optional if WS_ROOT/WORKSPACES_ROOT env is set)

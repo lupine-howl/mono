@@ -1,5 +1,4 @@
-
-import { runGit, getCwd } from "../helpers.js";
+import { runGit, getCwd } from "./helpers.js";
 
 export const gitBranchList = {
   name: "gitBranchList",
@@ -18,10 +17,13 @@ export const gitBranchList = {
       "--format=%(refname:short)\t%(objectname:short)\t%(HEAD)",
     ]);
     if (!r.ok) return { error: r.error };
-    const items = r.stdout.split(/\r?\n/).filter(Boolean).map((ln) => {
-      const [name, short, head] = ln.split("\t");
-      return { name, short, current: head === "*" };
-    });
+    const items = r.stdout
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((ln) => {
+        const [name, short, head] = ln.split("\t");
+        return { name, short, current: head === "*" };
+      });
     return { ws, items };
   },
   tags: ["GIT"],

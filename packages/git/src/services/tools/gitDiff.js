@@ -1,5 +1,4 @@
-
-import { runGit, getCwd, GIT_DEFAULTS } from "../helpers.js";
+import { runGit, getCwd, GIT_DEFAULTS } from "./helpers.js";
 
 export const gitDiff = {
   name: "gitDiff",
@@ -21,7 +20,12 @@ export const gitDiff = {
     const cwd = await getCwd(ws);
     const args = commit
       ? ["show", commit, "--patch", "--no-color", ...(p ? ["--", p] : [])]
-      : ["diff", ...(cached ? ["--cached"] : []), "--no-color", ...(p ? ["--", p] : [])];
+      : [
+          "diff",
+          ...(cached ? ["--cached"] : []),
+          "--no-color",
+          ...(p ? ["--", p] : []),
+        ];
     const r = await runGit(cwd, args, { timeout: GIT_DEFAULTS.timeouts.diff });
     return r.ok ? { ws, diff: r.stdout } : { error: r.error };
   },

@@ -1,5 +1,4 @@
-
-import { runGit, getCwd, currentBranch, GIT_DEFAULTS } from "../helpers.js";
+import { runGit, getCwd, currentBranch, GIT_DEFAULTS } from "./helpers.js";
 
 export const gitPull = {
   name: "gitPull",
@@ -19,7 +18,12 @@ export const gitPull = {
   handler: async ({ ws, remote = "origin", branch, rebase = true }) => {
     const cwd = await getCwd(ws);
     const br = branch && branch.trim() ? branch : await currentBranch(cwd);
-    const args = ["pull", ...(rebase ? ["--rebase"] : ["--ff-only"]), remote, br];
+    const args = [
+      "pull",
+      ...(rebase ? ["--rebase"] : ["--ff-only"]),
+      remote,
+      br,
+    ];
     const r = await runGit(cwd, args, { timeout: GIT_DEFAULTS.timeouts.pull });
     return r.ok ? { ok: true, output: r.stdout } : { error: r.error };
   },

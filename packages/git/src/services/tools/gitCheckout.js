@@ -1,5 +1,4 @@
-
-import { runGit, getCwd } from "../helpers.js";
+import { runGit, getCwd } from "./helpers.js";
 
 export const gitCheckout = {
   name: "gitCheckout",
