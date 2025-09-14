@@ -1,7 +1,8 @@
 // fs/service.js
-import sharp from "sharp"; // ← add this at the top of your file
+import sharp from "sharp";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { getGlobalSingleton } from "@loki/utilities";
 import {
   looksText,
   mimeFor,
@@ -15,11 +16,8 @@ import {
   walkTreeConcurrent,
   makeIgnoreMatcher,
 } from "./utils.js";
-// fs/service.js (top of file)
-const DEFAULT_BUNDLE_IGNORES = ["node_modules/", "dist/"];
 
-// --- inside fs/service.js ---
-// --- inside fs/service.js ---
+const DEFAULT_BUNDLE_IGNORES = ["node_modules/", "dist/"];
 
 const DEFAULT_WS_SCAN_IGNORES = [
   "node_modules",
@@ -42,47 +40,92 @@ const DEFAULT_WS_SCAN_IGNORES = [
   "__pycache__",
 ];
 
-export function createFsService({ workspaces, root } = {}) {
-  // Helper to summarize package.json into lightweight meta
-  const summarizePkg = (pkg) => ({
-    name: pkg?.name,
-    version: pkg?.version,
-    private: !!pkg?.private,
-    type: pkg?.type,
-    description: pkg?.description,
-    dependencies: Object.keys(pkg?.dependencies || {}).length,
-    devDependencies: Object.keys(pkg?.devDependencies || {}).length,
-    scripts: Object.keys(pkg?.scripts || {}).length,
-  });
+// ---------- Workspace Store (singleton) ----------
+const WorkspaceStore = getGlobalSingleton(
+  Symbol.for("fs.WorkspaceStore"),
+  () => {
+    const state = {
+      root:
+        process.env.WS_ROOT ||
+        process.env.WORKSPACES_ROOT ||
+        path.resolve(process.cwd(), "../../"),
+      staticWorkspaces: null, // optional: { id: { name,path,readOnly } }
+      preferShallow: undefined, // auto by default
+      shallowDepth: 3,
+      concurrency: 8,
+      ttlMs: 30_000,
+      maxFiles: 20_000,
+      maxDepth: 6,
+      includeHidden: false,
+      extraIgnores: [],
+      // cache
+      cacheAt: 0,
+      cacheBase: null,
+      results: null, // Map<string, wsObj>
+      promise: null,
+      ensureStatic: null, // set if staticWorkspaces provided
+    };
 
-  function makeDynamicWsResolver({
-    root,
-    concurrency = 8,
-    ttlMs = 5000,
-    maxDirs = 20000,
-    maxFiles = 20000,
-    maxDepth = 6,
-    includeHidden = false,
-    extraIgnores = [],
-    // NEW: can be true/false or a number for levels. If undefined, auto-detect.
-    preferShallow,
-    shallowDepth = 3, // default shallow depth: 2 levels (packages/*/*/package.json)
-  } = {}) {
-    const resolvedRoot = path.resolve(root);
+    const summarizePkg = (pkg) => ({
+      name: pkg?.name,
+      version: pkg?.version,
+      private: !!pkg?.private,
+      type: pkg?.type,
+      description: pkg?.description,
+      dependencies: Object.keys(pkg?.dependencies || {}).length,
+      devDependencies: Object.keys(pkg?.devDependencies || {}).length,
+      scripts: Object.keys(pkg?.scripts || {}).length,
+    });
 
-    async function pickExistingRoot() {
-      const st = await statSafe(resolvedRoot);
-      if (st?.isDirectory()) return resolvedRoot;
-      throw new Error(`Configured workspace root not found: ${resolvedRoot}`);
+    function configure({
+      root,
+      workspaces, // optional static map { id: {name, path, readOnly} }
+      preferShallow,
+      shallowDepth,
+      ttlMs,
+      extraIgnores,
+      includeHidden,
+      maxDepth,
+      maxFiles,
+      concurrency,
+    } = {}) {
+      if (root) state.root = path.resolve(root);
+      if (workspaces && typeof workspaces === "object") {
+        state.staticWorkspaces = { ...workspaces };
+        state.ensureStatic = makeEnsureWs(state.staticWorkspaces);
+      }
+      if (preferShallow !== undefined) state.preferShallow = preferShallow;
+      if (shallowDepth != null) state.shallowDepth = shallowDepth;
+      if (ttlMs != null) state.ttlMs = ttlMs;
+      if (Array.isArray(extraIgnores))
+        state.extraIgnores = extraIgnores.slice();
+      if (includeHidden != null) state.includeHidden = !!includeHidden;
+      if (maxDepth != null) state.maxDepth = maxDepth;
+      if (maxFiles != null) state.maxFiles = maxFiles;
+      if (concurrency != null) state.concurrency = concurrency;
+      invalidate();
     }
 
-    // cache
-    let cache = { at: 0, base: null, results: null, promise: null };
+    function invalidate() {
+      state.cacheAt = 0;
+      state.cacheBase = null;
+      state.results = null;
+      state.promise = null;
+    }
 
-    // NEW: shallow scan up to N levels (BFS), super fast for monorepos
+    async function pickExistingRoot() {
+      const root = path.resolve(state.root);
+      const st = await statSafe(root);
+      if (st?.isDirectory()) return root;
+      throw new Error(`Workspace root not found: ${root}`);
+    }
+
     async function scanLimitedDepth(base, levels) {
       const results = new Map();
-      const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
+      const ignoreSet = new Set([
+        ...DEFAULT_WS_SCAN_IGNORES,
+        ...state.extraIgnores,
+      ]);
       const queue = [{ rel: ".", abs: base, depth: 0 }];
       const seen = new Set();
 
@@ -91,7 +134,6 @@ export function createFsService({ workspaces, root } = {}) {
         if (seen.has(abs)) continue;
         seen.add(abs);
 
-        // 1) if this dir has a package.json, register it
         try {
           const txt = await fs.readFile(path.join(abs, "package.json"), "utf8");
           const pkg = JSON.parse(txt);
@@ -107,16 +149,15 @@ export function createFsService({ workspaces, root } = {}) {
           if (!results.has(id)) results.set(id, wsObj);
           if (pkg?.name && !results.has(pkg.name)) results.set(pkg.name, wsObj);
         } catch {
-          // no package.json here — OK
+          // no package.json here — ok
         }
 
-        // 2) descend if we still have depth budget
         if (depth >= levels) continue;
         const entries = await fs.readdir(abs, { withFileTypes: true });
         for (const ent of entries) {
           if (!ent.isDirectory()) continue;
           const name = ent.name;
-          if (!includeHidden && name.startsWith(".")) continue;
+          if (!state.includeHidden && name.startsWith(".")) continue;
           if (ignoreSet.has(name)) continue;
           const childAbs = path.join(abs, name);
           const childRel = rel === "." ? name : path.posix.join(rel, name);
@@ -126,24 +167,27 @@ export function createFsService({ workspaces, root } = {}) {
       return results;
     }
 
-    // existing bounded deep scan for general roots
     async function scanDeep(base) {
       const results = new Map();
       const start = Date.now();
-      const ignoreSet = new Set([...DEFAULT_WS_SCAN_IGNORES, ...extraIgnores]);
+      const ignoreSet = new Set([
+        ...DEFAULT_WS_SCAN_IGNORES,
+        ...state.extraIgnores,
+      ]);
 
-      const stop = () => Date.now() - start > ttlMs || results.size >= maxFiles;
+      const stop = () =>
+        Date.now() - start > state.ttlMs || results.size >= state.maxFiles;
       const depthOf = (rel) =>
         !rel || rel === "." ? 0 : rel.split("/").length - 1;
 
       await walkTreeConcurrent(base, ".", {
-        includeHidden,
-        concurrency,
+        includeHidden: state.includeHidden,
+        concurrency: state.concurrency,
         followSymlinks: false,
         stop,
         shouldSkip: (name, relPath, isDir) => {
-          if (depthOf(relPath) > maxDepth) return true;
-          if (!includeHidden && name.startsWith(".")) return true;
+          if (depthOf(relPath) > state.maxDepth) return true;
+          if (!state.includeHidden && name.startsWith(".")) return true;
           if (isDir && ignoreSet.has(name)) return true;
           return false;
         },
@@ -174,57 +218,94 @@ export function createFsService({ workspaces, root } = {}) {
 
     async function scanDynamicWorkspaces() {
       const base = await pickExistingRoot();
-
-      // cache/coalesce
       const now = Date.now();
-      if (cache.results && cache.base === base && now - cache.at < ttlMs) {
-        return { base, results: cache.results };
-      }
-      if (cache.promise && cache.base === base) return cache.promise;
 
-      // decide strategy
+      if (
+        state.results &&
+        state.cacheBase === base &&
+        now - state.cacheAt < state.ttlMs
+      ) {
+        return { base, results: state.results };
+      }
+      if (state.promise && state.cacheBase === base) return state.promise;
+
+      // decide shallow vs deep
       const baseHasPkg = !!(await statSafe(path.join(base, "package.json")));
       let shallowLevels;
-      if (typeof preferShallow === "number") {
-        shallowLevels = Math.max(0, preferShallow);
-      } else if (preferShallow === true) {
-        shallowLevels = shallowDepth;
-      } else if (preferShallow === false) {
+      if (typeof state.preferShallow === "number") {
+        shallowLevels = Math.max(0, state.preferShallow);
+      } else if (state.preferShallow === true) {
+        shallowLevels = state.shallowDepth;
+      } else if (state.preferShallow === false) {
         shallowLevels = 0;
       } else {
-        // auto: if base is likely a packages dir or not a package itself → shallow first
         shallowLevels =
-          path.basename(base) === "packages" || !baseHasPkg ? shallowDepth : 0;
+          path.basename(base) === "packages" || !baseHasPkg
+            ? state.shallowDepth
+            : 0;
       }
 
-      cache.base = base;
-      cache.promise = (async () => {
+      state.cacheBase = base;
+      state.promise = (async () => {
         let results;
         if (shallowLevels > 0) {
           results = await scanLimitedDepth(base, shallowLevels);
-          // fallback to deep if nothing found (unusual structure)
           if (results.size === 0) results = await scanDeep(base);
         } else {
           results = await scanDeep(base);
         }
-        cache.at = Date.now();
-        cache.results = results;
-        cache.promise = null;
+        state.cacheAt = Date.now();
+        state.results = results;
+        state.promise = null;
         return { base, results };
       })();
 
-      return cache.promise;
+      return state.promise;
     }
 
-    async function ensureWsDynamic(id) {
+    async function ensureWs(id) {
+      // static?
+      if (state.ensureStatic) return state.ensureStatic(id);
       if (!id) throw new Error("Workspace id required");
+
       const { results } = await scanDynamicWorkspaces();
       const w = results.get(String(id));
       if (!w) throw new Error(`Unknown workspace: ${id}`);
       return w;
     }
 
-    async function fsWorkspacesDynamic() {
+    async function listWorkspaces() {
+      // static → enrich with package.json if present
+      if (state.ensureStatic) {
+        const entries = Object.entries(state.staticWorkspaces).map(
+          ([id, w]) => ({ id, ...w })
+        );
+        const enriched = await Promise.all(
+          entries.map(async (w) => {
+            try {
+              const txt = await fs.readFile(
+                path.join(w.path, "package.json"),
+                "utf8"
+              );
+              const pkg = JSON.parse(txt);
+              return { ...w, meta: summarizePkg(pkg) };
+            } catch {
+              return w;
+            }
+          })
+        );
+        return {
+          workspaces: enriched.map((w) => ({
+            id: w.id,
+            name: w.name,
+            path: w.path,
+            readOnly: !!w.readOnly,
+            ...(w.meta ? { meta: w.meta } : {}),
+          })),
+        };
+      }
+
+      // dynamic
       const { results } = await scanDynamicWorkspaces();
       const uniq = new Map();
       for (const w of results.values()) {
@@ -241,427 +322,558 @@ export function createFsService({ workspaces, root } = {}) {
       };
     }
 
-    return { ensureWsDynamic, fsWorkspacesDynamic };
+    return {
+      configure,
+      invalidate,
+      ensureWs,
+      listWorkspaces,
+      get root() {
+        return state.root;
+      },
+    };
+  }
+);
+
+// ---------- Public API (ad-hoc, no class/closure needed) ----------
+export function configureFs(opts = {}) {
+  WorkspaceStore.configure(opts);
+}
+export function invalidateFsCache() {
+  WorkspaceStore.invalidate();
+}
+
+// export the resolved workspace (useful to callers that need absolute path)
+export async function getWorkspace(ws) {
+  return WorkspaceStore.ensureWs(ws); // { id, name, path, readOnly, meta? }
+}
+
+export async function getWorkspacePath(ws) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  return w.path;
+}
+
+export async function fsWorkspaces() {
+  return WorkspaceStore.listWorkspaces();
+}
+
+export async function fsList({ ws, rel = "." }) {
+  const { path: root } = await WorkspaceStore.ensureWs(ws);
+  const dir = safeJoin(root, rel);
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  const items = await Promise.all(
+    entries.map(async (ent) => {
+      try {
+        const p = path.join(dir, ent.name);
+        const s = await fs.stat(p);
+        return {
+          name: ent.name,
+          type: ent.isDirectory() ? "dir" : "file",
+          size: s.size,
+          mtime: s.mtimeMs,
+          ext: ent.isDirectory() ? "" : path.extname(ent.name).slice(1),
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return { path: rel, items: items.filter(Boolean).sort(sortDirsFirst) };
+}
+
+export async function fsRead({ ws, path: rel }) {
+  const { path: root } = await WorkspaceStore.ensureWs(ws);
+  const file = safeJoin(root, rel);
+  const st = await fs.stat(file);
+
+  if (st.isDirectory()) {
+    return {
+      error: "EISDIR",
+      mime: "inode/directory",
+      encoding: "none",
+      content: "",
+    };
   }
 
-  // Determine mode: static (legacy) vs dynamic (scan by root)
-  const isDynamic = !workspaces || Object.keys(workspaces).length === 0;
+  const mime = mimeFor(file);
+  const texty = looksText(file);
+  const isImage = mime.startsWith("image/");
 
-  const ensureStatic = workspaces ? makeEnsureWs(workspaces) : null;
-  const dynamicHelpers = isDynamic ? makeDynamicWsResolver({ root }) : null;
+  if (texty) {
+    const content = await fs.readFile(file, "utf8");
+    return { content, mime, encoding: "utf8" };
+  }
 
-  const ensureWs = async (ws) => {
-    if (isDynamic) return dynamicHelpers.ensureWsDynamic(ws);
-    // allow await on non-promise
-    return ensureStatic(ws);
+  if (isImage) {
+    try {
+      const buf = await sharp(file)
+        .resize({ width: 800 })
+        .jpeg({ quality: 70 })
+        .toBuffer();
+      return {
+        content: buf.toString("base64"),
+        mime: "image/jpeg",
+        encoding: "base64",
+      };
+    } catch (e) {
+      return { error: e?.message || "Image processing failed" };
+    }
+  }
+
+  const buf = await fs.readFile(file);
+  return {
+    content: buf.toString("base64"),
+    mime,
+    encoding: "base64",
+  };
+}
+
+export async function fsWrite({ ws, path: rel, content = "" }) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+
+  const file = safeJoin(w.path, rel);
+  const tmp = file + ".tmp";
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tmp, content, "utf8");
+  await fs.rename(tmp, file);
+  return { ok: true };
+}
+
+export async function fsBundle({
+  ws,
+  path: rel = ".",
+  recursive = true,
+  maxFiles = 500,
+  maxBytesTotal = 2_000_000,
+  maxBytesPerFile = 2_000_000,
+  includeHidden = true,
+  includeBinary = true,
+  concurrency = 8,
+  ignore = DEFAULT_BUNDLE_IGNORES,
+  followSymlinks = false,
+}) {
+  let effectiveRel = rel || ".";
+  if (effectiveRel.startsWith("/")) effectiveRel = effectiveRel.slice(1);
+
+  const { path: wsRoot } = await WorkspaceStore.ensureWs(ws);
+  const startAbs = safeJoin(wsRoot, effectiveRel);
+
+  const out = {
+    workspace: ws,
+    root: effectiveRel,
+    recursive,
+    files: [],
+    limits: { maxFiles, maxBytesTotal, maxBytesPerFile },
+    totals: { files: 0, bytesContent: 0 },
+    truncated: false,
   };
 
-  async function fsWorkspaces() {
-    if (isDynamic) return dynamicHelpers.fsWorkspacesDynamic();
-    // static: try to enrich with package.json where possible
-    const entries = Object.entries(workspaces).map(([id, w]) => ({ id, ...w }));
-    const enriched = await Promise.all(
-      entries.map(async (w) => {
-        try {
-          const txt = await fs.readFile(path.join(w.path, "package.json"), "utf8");
-          const pkg = JSON.parse(txt);
-          return { ...w, meta: summarizePkg(pkg) };
-        } catch {
-          return w;
-        }
-      })
-    );
-    return {
-      workspaces: enriched.map((w) => ({
-        id: w.id,
-        name: w.name,
-        path: w.path,
-        readOnly: !!w.readOnly,
-        ...(w.meta ? { meta: w.meta } : {}),
-      })),
-    };
-  }
+  const stop = () =>
+    out.truncated ||
+    out.files.length >= maxFiles ||
+    out.totals.bytesContent >= maxBytesTotal;
 
-  async function fsList({ ws, rel = "." }) {
-    const { path: root } = await ensureWs(ws);
-    const dir = safeJoin(root, rel);
-    const entries = await fs.readdir(dir, { withFileTypes: true });
+  const ignoreMatch = makeIgnoreMatcher(ignore);
 
-    const items = await Promise.all(
-      entries.map(async (ent) => {
-        try {
-          const p = path.join(dir, ent.name);
-          const s = await fs.stat(p);
-          return {
-            name: ent.name,
-            type: ent.isDirectory() ? "dir" : "file",
-            size: s.size,
-            mtime: s.mtimeMs,
-            ext: ent.isDirectory() ? "" : path.extname(ent.name).slice(1),
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
+  const pushDir = (relPath, st) => {
+    if (!recursive) return;
+    out.files.push({
+      path: relPath,
+      type: "dir",
+      size: st.size,
+      mtime: st.mtimeMs,
+    });
+    out.totals.files++;
+  };
 
-    return { path: rel, items: items.filter(Boolean).sort(sortDirsFirst) };
-  }
+  const pushFile = (relPath, st, encoding, content, truncated) => {
+    out.files.push({
+      path: relPath,
+      type: "file",
+      size: st.size,
+      mtime: st.mtimeMs,
+      encoding,
+      ...(content != null ? { content } : {}),
+      ...(truncated ? { truncated: true } : {}),
+    });
+    out.totals.files++;
+  };
 
-  // Inside createFsService
-  async function fsRead({ ws, path: rel }) {
-    const { path: root } = await ensureWs(ws);
-    const file = safeJoin(root, rel);
-    const st = await fs.stat(file);
+  try {
+    const st = await statSafe(startAbs);
+    if (!st) return { error: "Not found" };
 
     if (st.isDirectory()) {
-      return {
-        error: "EISDIR",
-        mime: "inode/directory",
-        encoding: "none",
-        content: "",
-      };
+      await walkTreeConcurrent(startAbs, effectiveRel, {
+        includeHidden,
+        concurrency,
+        stop,
+        followSymlinks,
+        shouldSkip: (name, relPath, isDir) => {
+          if (!includeHidden && name.startsWith(".")) return true;
+          if (ignoreMatch(relPath, isDir)) return true;
+          if (!recursive && isDir) return true;
+          return false;
+        },
+        async onDir(abs, relPath, dirStat) {
+          if (stop()) return;
+          pushDir(relPath, dirStat);
+        },
+        async onFile(abs, relPath, fileStat) {
+          if (stop()) return;
+          const isText = looksText(abs);
+          const remaining = maxBytesTotal - out.totals.bytesContent;
+          const budget =
+            remaining > 0 ? Math.min(maxBytesPerFile, remaining) : 0;
+          if (budget <= 0) {
+            out.truncated = true;
+            return;
+          }
+
+          const { content, usedBytes, truncated, encoding } =
+            await readWithBudget(abs, {
+              isText,
+              budget,
+              includeBinary,
+              stat: fileStat,
+            });
+
+          if (encoding !== "none") out.totals.bytesContent += usedBytes;
+          pushFile(relPath, fileStat, encoding, content, truncated);
+          if (stop()) out.truncated = true;
+        },
+      });
+    } else {
+      const isText = looksText(startAbs);
+      const budget = Math.min(maxBytesPerFile, maxBytesTotal);
+      const { content, usedBytes, truncated, encoding } = await readWithBudget(
+        startAbs,
+        {
+          isText,
+          budget,
+          includeBinary,
+          stat: st,
+        }
+      );
+      if (encoding !== "none") out.totals.bytesContent += usedBytes;
+      pushFile(effectiveRel, st, encoding, content, truncated);
     }
 
-    const mime = mimeFor(file);
-    const texty = looksText(file);
-    const isImage = mime.startsWith("image/");
-
-    // Handle text files
-    if (texty) {
-      const content = await fs.readFile(file, "utf8");
-      return { content, mime, encoding: "utf8" };
+    if (
+      out.files.length >= maxFiles ||
+      out.totals.bytesContent >= maxBytesTotal
+    ) {
+      out.truncated = true;
     }
+    return out;
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
+}
 
-    // Handle images using Sharp
-    if (isImage) {
+export async function fsApply({ ws, files }) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+  if (!Array.isArray(files)) return { error: "files[] required" };
+
+  for (const f of files) {
+    const abs = safeJoin(w.path, f.path);
+    if (f.delete) {
       try {
-        const buf = await sharp(file)
-          .resize({ width: 800 })
-          .jpeg({ quality: 70 }) // or .png({ quality: 70 }) if you want to preserve type
-          .toBuffer();
-        return {
-          content: buf.toString("base64"),
-          mime: "image/jpeg", // You can keep `mime` or force "image/jpeg"
-          encoding: "base64",
-        };
-      } catch (e) {
-        return { error: e?.message || "Image processing failed" };
+        await fs.rm(abs, { recursive: true, force: true });
+      } catch {}
+      continue;
+    }
+    if (f.type === "dir") {
+      await fs.mkdir(abs, { recursive: true });
+      continue;
+    }
+    if (f.type === "file") {
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      const buf = Buffer.from(
+        f.content || "",
+        f.encoding === "base64" ? "base64" : "utf8"
+      );
+      const tmp = abs + ".tmp";
+      await fs.writeFile(tmp, buf);
+      await fs.rename(tmp, abs);
+    }
+  }
+  return { ok: true, applied: files.length };
+}
+
+export async function fsMkdir({ ws, path: rel, recursive = true }) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+  const abs = safeJoin(w.path, rel);
+  await fs.mkdir(abs, { recursive });
+  return { ok: true };
+}
+
+export async function fsRename({ ws, from, to }) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+  const absFrom = safeJoin(w.path, from);
+  const absTo = safeJoin(w.path, to);
+  try {
+    await fs.rename(absFrom, absTo);
+  } catch (e) {
+    if (e && e.code === "EXDEV") {
+      await fs.cp(absFrom, absTo, {
+        recursive: true,
+        force: true,
+        errorOnExist: false,
+      });
+      await fs.rm(absFrom, { recursive: true, force: true });
+    } else {
+      throw e;
+    }
+  }
+  return { ok: true };
+}
+
+export async function fsMove(args) {
+  return fsRename(args);
+}
+
+export async function fsDelete({ ws, paths, recursive = true, force = true }) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+  if (!Array.isArray(paths) || paths.length === 0)
+    return { error: "paths[] required" };
+
+  let deleted = 0;
+  for (const p of paths) {
+    const abs = safeJoin(w.path, p);
+    try {
+      await fs.rm(abs, { recursive, force });
+      deleted++;
+    } catch {}
+  }
+  return { ok: true, deleted };
+}
+
+export async function fsCopy({
+  ws,
+  from,
+  to,
+  recursive = true,
+  overwrite = true,
+}) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+  const absFrom = safeJoin(w.path, from);
+  const absTo = safeJoin(w.path, to);
+  await fs.cp(absFrom, absTo, {
+    recursive,
+    force: !!overwrite,
+    errorOnExist: !overwrite,
+  });
+  return { ok: true };
+}
+
+export async function fsTouch({ ws, path: rel }) {
+  const w = await WorkspaceStore.ensureWs(ws);
+  if (w.readOnly) return { error: "Workspace is read-only" };
+  const abs = safeJoin(w.path, rel);
+  await fs.mkdir(path.dirname(abs), { recursive: true });
+  const now = new Date();
+  try {
+    await fs.utimes(abs, now, now);
+  } catch {
+    await fs.writeFile(abs, "");
+  }
+  return { ok: true };
+}
+
+export async function fsReadSnapshot({
+  ws,
+  path: baseRel = ".",
+  recursive = true,
+  maxFiles = 500,
+  maxBytesTotal = 2_000_000,
+  maxBytesPerFile = 2_000_000,
+  includeHidden = true,
+  ignore = DEFAULT_SNAPSHOT_IGNORES,
+  concurrency = 8,
+  followSymlinks = false,
+}) {
+  let rel = baseRel || ".";
+  if (rel.startsWith("/")) rel = rel.slice(1);
+
+  const recursiveBool =
+    recursive === true ||
+    recursive === 1 ||
+    recursive === "1" ||
+    (typeof recursive === "string" && recursive.toLowerCase() === "true");
+
+  const { path: wsRoot } = await WorkspaceStore.ensureWs(ws);
+  const startAbs = safeJoin(wsRoot, rel);
+
+  const out = { workspace: ws, path: rel, files: [] };
+
+  const st = await statSafe(startAbs);
+  if (!st) return { error: "Not found" };
+
+  const ignoreMatch = makeIgnoreMatcher(ignore);
+
+  let bytesUsed = 0;
+  let truncated = false;
+  const stop = () =>
+    truncated || out.files.length >= maxFiles || bytesUsed >= maxBytesTotal;
+
+  const pushFile = (relPath, content) => {
+    out.files.push({
+      path: relPath,
+      name: path.posix.basename(relPath),
+      content,
+    });
+  };
+
+  try {
+    if (st.isDirectory()) {
+      await walkTreeConcurrent(startAbs, rel, {
+        includeHidden,
+        concurrency,
+        stop,
+        followSymlinks,
+        shouldSkip: (name, relPath, isDir) => {
+          if (!includeHidden && name.startsWith(".")) return true;
+          if (ignoreMatch(relPath, isDir)) return true;
+          if (!recursiveBool && isDir) return true;
+          return false;
+        },
+        async onDir() {},
+        async onFile(abs, relPath, fileStat) {
+          if (stop()) return;
+          if (!looksText(abs)) return;
+
+          const remaining = maxBytesTotal - bytesUsed;
+          const budget =
+            remaining > 0 ? Math.min(maxBytesPerFile, remaining) : 0;
+          if (budget <= 0) {
+            truncated = true;
+            return;
+          }
+
+          const { content, usedBytes } = await readWithBudget(abs, {
+            isText: true,
+            budget,
+            includeBinary: false,
+            stat: fileStat,
+          });
+          if (typeof content !== "string") return;
+
+          bytesUsed += usedBytes;
+          pushFile(relPath, content);
+          if (stop()) truncated = true;
+        },
+      });
+    } else {
+      if (!looksText(startAbs)) return out;
+      const { content, usedBytes } = await readWithBudget(startAbs, {
+        isText: true,
+        budget: Math.min(maxBytesPerFile, maxBytesTotal),
+        includeBinary: false,
+        stat: st,
+      });
+      if (typeof content === "string") {
+        bytesUsed += usedBytes;
+        pushFile(rel, content);
       }
     }
+    return out;
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
+}
 
-    // Fallback for other binary files
-    const buf = await fs.readFile(file);
-    return {
-      content: buf.toString("base64"),
-      mime,
-      encoding: "base64",
-    };
+export async function fsWriteSnapshot({
+  ws,
+  path: baseRel = ".",
+  files = [],
+  deleteMissing = false,
+  includeHidden = true,
+  ignore = DEFAULT_SNAPSHOT_IGNORES,
+  concurrency = 8,
+  followSymlinks = false,
+  dryRun = false,
+}) {
+  if (!Array.isArray(files)) return { error: "files[] required" };
+
+  let rel = baseRel || ".";
+  if (rel.startsWith("/")) rel = rel.slice(1);
+
+  const { path: wsRoot } = await WorkspaceStore.ensureWs(ws);
+  const startAbs = safeJoin(wsRoot, rel);
+
+  // normalize desired set
+  const desired = new Set(
+    files
+      .map((f) => String(f?.path || "").trim())
+      .filter(Boolean)
+      .map((p) => path.posix.normalize(p).replace(/^\.\/+/, ""))
+  );
+
+  // Build apply plan
+  const plan = [];
+  // writes (atomic via fsApply)
+  for (const f of files) {
+    const p = String(f?.path || "").trim();
+    if (!p) continue;
+    const norm = path.posix.normalize(p).replace(/^\.\/+/, "");
+    plan.push({
+      path: path.posix.join(rel, norm),
+      type: "file",
+      encoding: "utf8",
+      content: String(f?.content ?? ""),
+    });
   }
 
-  async function fsWrite({ ws, path: rel, content = "" }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-
-    const file = safeJoin(w.path, rel);
-    const tmp = file + ".tmp";
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(tmp, content, "utf8");
-    await fs.rename(tmp, file);
-    return { ok: true };
-  }
-
-  // fs/service.js (inside createFsService)
-  async function fsBundle({
-    ws,
-    path: rel = ".",
-    recursive = true,
-    maxFiles = 500,
-    maxBytesTotal = 2_000_000,
-    maxBytesPerFile = 2_000_000,
-    includeHidden = true,
-    includeBinary = true,
-    concurrency = 8,
-    ignore = DEFAULT_BUNDLE_IGNORES, // NEW default
-    followSymlinks = false, // NEW default
-  }) {
-    let effectiveRel = rel || ".";
-    if (effectiveRel.startsWith("/")) effectiveRel = effectiveRel.slice(1);
-
-    const { path: wsRoot } = await ensureWs(ws);
-    const startAbs = safeJoin(wsRoot, effectiveRel);
-
-    const out = {
-      workspace: ws,
-      root: effectiveRel,
-      recursive,
-      files: [],
-      limits: { maxFiles, maxBytesTotal, maxBytesPerFile },
-      totals: { files: 0, bytesContent: 0 },
-      truncated: false,
-    };
-
-    const stop = () =>
-      out.truncated ||
-      out.files.length >= maxFiles ||
-      out.totals.bytesContent >= maxBytesTotal;
+  // Optional deletions (text files only, filtered like fsReadSnapshot)
+  if (deleteMissing) {
+    const st = await statSafe(startAbs);
+    if (!st) return { error: "Base path not found" };
 
     const ignoreMatch = makeIgnoreMatcher(ignore);
+    const existing = [];
 
-    const pushDir = (relPath, st) => {
-      // keep directory entries only when recursive (same behavior as before)
-      if (!recursive) return;
-      out.files.push({
-        path: relPath,
-        type: "dir",
-        size: st.size,
-        mtime: st.mtimeMs,
-      });
-      out.totals.files++;
-    };
-
-    const pushFile = (relPath, st, encoding, content, truncated) => {
-      out.files.push({
-        path: relPath,
-        type: "file",
-        size: st.size,
-        mtime: st.mtimeMs,
-        encoding,
-        ...(content != null ? { content } : {}),
-        ...(truncated ? { truncated: true } : {}),
-      });
-      out.totals.files++;
-    };
-
-    try {
-      const st = await statSafe(startAbs);
-      if (!st) return { error: "Not found" };
-
-      if (st.isDirectory()) {
-        await walkTreeConcurrent(startAbs, effectiveRel, {
-          includeHidden,
-          concurrency,
-          stop,
-          followSymlinks,
-          shouldSkip: (name, relPath, isDir) => {
-            if (!includeHidden && name.startsWith(".")) return true;
-            if (ignoreMatch(relPath, isDir)) return true; // ← SKIP node_modules/dist
-            if (!recursive && isDir) return true;
-            return false;
-          },
-          async onDir(abs, relPath, dirStat) {
-            if (stop()) return;
-            pushDir(relPath, dirStat);
-          },
-          async onFile(abs, relPath, fileStat) {
-            if (stop()) return;
-            const isText = looksText(abs);
-            const remaining = maxBytesTotal - out.totals.bytesContent;
-            const budget =
-              remaining > 0 ? Math.min(maxBytesPerFile, remaining) : 0;
-            if (budget <= 0) {
-              out.truncated = true;
-              return;
-            }
-
-            const { content, usedBytes, truncated, encoding } =
-              await readWithBudget(abs, {
-                isText,
-                budget,
-                includeBinary,
-                stat: fileStat,
-              });
-
-            if (encoding !== "none") out.totals.bytesContent += usedBytes;
-            pushFile(relPath, fileStat, encoding, content, truncated);
-            if (stop()) out.truncated = true;
-          },
-        });
-      } else {
-        const isText = looksText(startAbs);
-        const budget = Math.min(maxBytesPerFile, maxBytesTotal);
-        const { content, usedBytes, truncated, encoding } =
-          await readWithBudget(startAbs, {
-            isText,
-            budget,
-            includeBinary,
-            stat: st,
-          });
-        if (encoding !== "none") out.totals.bytesContent += usedBytes;
-        pushFile(effectiveRel, st, encoding, content, truncated);
-      }
-
-      if (
-        out.files.length >= maxFiles ||
-        out.totals.bytesContent >= maxBytesTotal
-      ) {
-        out.truncated = true;
-      }
-      return out;
-    } catch (e) {
-      return { error: e?.message || String(e) };
-    }
-  }
-
-  async function fsApply({ ws, files }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-    if (!Array.isArray(files)) return { error: "files[] required" };
-
-    for (const f of files) {
-      const abs = safeJoin(w.path, f.path);
-      if (f.delete) {
-        try {
-          await fs.rm(abs, { recursive: true, force: true });
-        } catch {}
-        continue;
-      }
-      if (f.type === "dir") {
-        await fs.mkdir(abs, { recursive: true });
-        continue;
-      }
-      if (f.type === "file") {
-        await fs.mkdir(path.dirname(abs), { recursive: true });
-        const buf = Buffer.from(
-          f.content || "",
-          f.encoding === "base64" ? "base64" : "utf8"
-        );
-        const tmp = abs + ".tmp";
-        await fs.writeFile(tmp, buf);
-        await fs.rename(tmp, abs);
-      }
-    }
-    return { ok: true, applied: files.length };
-  }
-
-  async function fsMkdir({ ws, path: rel, recursive = true }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-    const abs = safeJoin(w.path, rel);
-    await fs.mkdir(abs, { recursive });
-    return { ok: true };
-  }
-
-  async function fsRename({ ws, from, to }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-    const absFrom = safeJoin(w.path, from);
-    const absTo = safeJoin(w.path, to);
-    try {
-      await fs.rename(absFrom, absTo);
-    } catch (e) {
-      // EXDEV: cross-device move → copy then remove
-      if (e && e.code === "EXDEV") {
-        await fs.cp(absFrom, absTo, {
-          recursive: true,
-          force: true,
-          errorOnExist: false,
-        });
-        await fs.rm(absFrom, { recursive: true, force: true });
-      } else {
-        throw e;
-      }
-    }
-    return { ok: true };
-  }
-
-  async function fsMove(args) {
-    // alias to fsRename for ergonomics
-    return fsRename(args);
-  }
-
-  async function fsWriteSnapshot({
-    ws,
-    path: baseRel = ".",
-    files = [],
-    deleteMissing = false,
-    includeHidden = true,
-    ignore = DEFAULT_SNAPSHOT_IGNORES,
-    concurrency = 8,
-    followSymlinks = false,
-    dryRun = false,
-  }) {
-    if (!Array.isArray(files)) return { error: "files[] required" };
-
-    let rel = baseRel || ".";
-    if (rel.startsWith("/")) rel = rel.slice(1);
-    const { path: wsRoot } = await ensureWs(ws);
-    const startAbs = safeJoin(wsRoot, rel);
-
-    // normalize desired set
-    const desired = new Set(
-      files
-        .map((f) => String(f?.path || "").trim())
-        .filter(Boolean)
-        .map((p) => path.posix.normalize(p).replace(/^\.\/+/, ""))
-    );
-
-    // Build apply plan
-    const plan = [];
-    // Ensure parent dirs + file writes (utf8 text, atomic via fsApply)
-    for (const f of files) {
-      const p = String(f?.path || "").trim();
-      if (!p) continue;
-      const norm = path.posix.normalize(p).replace(/^\.\/+/, "");
-      plan.push({
-        path: path.posix.join(rel, norm),
-        type: "file",
-        encoding: "utf8",
-        content: String(f?.content ?? ""),
-      });
-    }
-
-    // Optionally compute deletions (text files only, filtered like fsReadSnapshot)
-    if (deleteMissing) {
-      const st = await statSafe(startAbs);
-      if (!st) return { error: "Base path not found" };
-      const ignoreMatch = makeIgnoreMatcher(ignore);
-      const existing = [];
-      if (st.isDirectory()) {
-        await walkTreeConcurrent(startAbs, rel, {
-          includeHidden,
-          concurrency,
-          followSymlinks,
-          shouldSkip: (name, relPath, isDir) => {
-            if (!includeHidden && name.startsWith(".")) return true;
-            if (ignoreMatch(relPath, isDir)) return true;
-            return false;
-          },
-          async onDir() {},
-          async onFile(abs, relPath /*, fileStat */) {
-            if (!looksText(abs)) return;
-            existing.push(relPath);
-          },
-        });
-      } else {
-        if (looksText(startAbs)) existing.push(rel);
-      }
-      for (const p of existing) {
-        const relUnderBase = path.posix.relative(rel, p);
-        const key = relUnderBase || path.posix.basename(p);
-        if (!desired.has(key)) {
-          plan.push({ path: p, delete: true });
-        }
-      }
-    }
-
-    if (dryRun) {
-      return {
-        ok: true,
-        dryRun: true,
-        plan,
-        summary: {
-          writes: files.length,
-          deletes: plan.filter((x) => x.delete).length,
+    if (st.isDirectory()) {
+      await walkTreeConcurrent(startAbs, rel, {
+        includeHidden,
+        concurrency,
+        followSymlinks,
+        shouldSkip: (name, relPath, isDir) => {
+          if (!includeHidden && name.startsWith(".")) return true;
+          if (ignoreMatch(relPath, isDir)) return true;
+          return false;
         },
-      };
+        async onDir() {},
+        async onFile(abs, relPath /*, fileStat */) {
+          if (!looksText(abs)) return;
+          existing.push(relPath);
+        },
+      });
+    } else {
+      if (looksText(startAbs)) existing.push(rel);
     }
 
-    // Apply
-    const res = await fsApply({ ws, files: plan });
+    for (const p of existing) {
+      const relUnderBase = path.posix.relative(rel, p);
+      const key = relUnderBase || path.posix.basename(p);
+      if (!desired.has(key)) {
+        plan.push({ path: p, delete: true });
+      }
+    }
+  }
+
+  if (dryRun) {
     return {
-      ok: !!res?.ok,
-      applied: res?.applied ?? 0,
+      ok: true,
+      dryRun: true,
+      plan,
       summary: {
         writes: files.length,
         deletes: plan.filter((x) => x.delete).length,
@@ -669,154 +881,20 @@ export function createFsService({ workspaces, root } = {}) {
     };
   }
 
-  async function fsDelete({ ws, paths, recursive = true, force = true }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-    if (!Array.isArray(paths) || paths.length === 0)
-      return { error: "paths[] required" };
+  const res = await fsApply({ ws, files: plan });
+  return {
+    ok: !!res?.ok,
+    applied: res?.applied ?? 0,
+    summary: {
+      writes: files.length,
+      deletes: plan.filter((x) => x.delete).length,
+    },
+  };
+}
 
-    let deleted = 0;
-    for (const p of paths) {
-      const abs = safeJoin(w.path, p);
-      try {
-        await fs.rm(abs, { recursive, force });
-        deleted++;
-      } catch {} // ignore per-item failures to be robust
-    }
-    return { ok: true, deleted };
-  }
-
-  async function fsCopy({ ws, from, to, recursive = true, overwrite = true }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-    const absFrom = safeJoin(w.path, from);
-    const absTo = safeJoin(w.path, to);
-    await fs.cp(absFrom, absTo, {
-      recursive,
-      force: !!overwrite,
-      errorOnExist: !overwrite,
-    });
-    return { ok: true };
-  }
-
-  async function fsTouch({ ws, path: rel }) {
-    const w = await ensureWs(ws);
-    if (w.readOnly) return { error: "Workspace is read-only" };
-    const abs = safeJoin(w.path, rel);
-    // ensure parent exists
-    await fs.mkdir(path.dirname(abs), { recursive: true });
-    // update mtime or create empty
-    const now = new Date();
-    try {
-      await fs.utimes(abs, now, now);
-    } catch {
-      await fs.writeFile(abs, "");
-    }
-    return { ok: true };
-  }
-
-  async function fsReadSnapshot({
-    ws,
-    path: baseRel = ".",
-    recursive = true,
-    maxFiles = 500,
-    maxBytesTotal = 2_000_000,
-    maxBytesPerFile = 2_000_000,
-    includeHidden = true,
-    ignore = DEFAULT_SNAPSHOT_IGNORES,
-    concurrency = 8,
-    followSymlinks = false, // keep symlinks off here too
-  }) {
-    let rel = baseRel || ".";
-    if (rel.startsWith("/")) rel = rel.slice(1);
-
-    const recursiveBool =
-      recursive === true ||
-      recursive === 1 ||
-      recursive === "1" ||
-      (typeof recursive === "string" && recursive.toLowerCase() === "true");
-
-    const { path: wsRoot } = await ensureWs(ws);
-    const startAbs = safeJoin(wsRoot, rel);
-
-    const out = { workspace: ws, path: rel, files: [] };
-
-    const st = await statSafe(startAbs);
-    if (!st) return { error: "Not found" };
-
-    const ignoreMatch = makeIgnoreMatcher(ignore);
-
-    let bytesUsed = 0;
-    let truncated = false;
-    const stop = () =>
-      truncated || out.files.length >= maxFiles || bytesUsed >= maxBytesTotal;
-
-    const pushFile = (relPath, content) => {
-      out.files.push({
-        path: relPath,
-        name: path.posix.basename(relPath),
-        content,
-      });
-    };
-
-    try {
-      if (st.isDirectory()) {
-        await walkTreeConcurrent(startAbs, rel, {
-          includeHidden,
-          concurrency,
-          stop,
-          followSymlinks,
-          shouldSkip: (name, relPath, isDir) => {
-            if (!includeHidden && name.startsWith(".")) return true;
-            if (ignoreMatch(relPath, isDir)) return true; // ← SKIP node_modules/dist/…
-            if (!recursiveBool && isDir) return true;
-            return false;
-          },
-          async onDir() {},
-          async onFile(abs, relPath, fileStat) {
-            if (stop()) return;
-            if (!looksText(abs)) return;
-
-            const remaining = maxBytesTotal - bytesUsed;
-            const budget =
-              remaining > 0 ? Math.min(maxBytesPerFile, remaining) : 0;
-            if (budget <= 0) {
-              truncated = true;
-              return;
-            }
-
-            const { content, usedBytes } = await readWithBudget(abs, {
-              isText: true,
-              budget,
-              includeBinary: false,
-              stat: fileStat,
-            });
-            if (typeof content !== "string") return;
-
-            bytesUsed += usedBytes;
-            pushFile(relPath, content);
-            if (stop()) truncated = true;
-          },
-        });
-      } else {
-        if (!looksText(startAbs)) return out;
-        const { content, usedBytes } = await readWithBudget(startAbs, {
-          isText: true,
-          budget: Math.min(maxBytesPerFile, maxBytesTotal),
-          includeBinary: false,
-          stat: st,
-        });
-        if (typeof content === "string") {
-          bytesUsed += usedBytes;
-          pushFile(rel, content);
-        }
-      }
-      return out;
-    } catch (e) {
-      return { error: e?.message || String(e) };
-    }
-  }
-
+// ---------- Back-compat shim (optional) ----------
+export function createFsService(/* { workspaces, root } = {} */) {
+  // Old API returned an object of functions; we just return the same singleton-backed fns.
   return {
     fsWorkspaces,
     fsList,
@@ -824,7 +902,7 @@ export function createFsService({ workspaces, root } = {}) {
     fsWrite,
     fsBundle,
     fsReadSnapshot,
-    fsWriteSnapshot,
+    fsWriteSnapshot, // still available via fsApply+plan, left here as-is
     fsApply,
     fsMkdir,
     fsRename,

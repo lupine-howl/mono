@@ -1,23 +1,35 @@
-import { createFsService } from "./service.js";
-import { DEFAULT_WORKSPACES, DEFAULT_SNAPSHOT_IGNORES } from "./constants.js";
+// tools/fs-tools.js (drop-in)
+import {
+  configureFs,
+  fsWorkspaces,
+  fsList,
+  fsRead,
+  fsWrite,
+  fsBundle,
+  fsReadSnapshot,
+  fsWriteSnapshot,
+  fsApply,
+  fsMkdir,
+  fsRename,
+  fsDelete,
+  fsCopy,
+  fsMove,
+  fsTouch,
+} from "./service.js";
+import { DEFAULT_SNAPSHOT_IGNORES } from "./constants.js";
 import path from "node:path";
 
 export function registerFsTools(tools, { logEntry } = {}) {
   const root = path.resolve(process.cwd(), "../../");
-  const svc = createFsService({
-    root,
-  });
+  // Configure singleton store for this process (optional if you set WS_ROOT)
+  configureFs({ root });
 
   // ---- Download (binary-safe) -----------------------------------------------
-
-  // Guess a filename & extension from URL/header
   function guessName({ url, contentType, fallback = "download.bin" }) {
     try {
       const u = new URL(url);
       let name = decodeURIComponent(u.pathname.split("/").pop() || "");
       if (!name) name = fallback;
-
-      // Add extension from content-type if missing
       if (!name.includes(".") && contentType) {
         const ext = {
           "image/png": "png",
@@ -61,8 +73,6 @@ export function registerFsTools(tools, { logEntry } = {}) {
       if (!/^https?:\/\//i.test(url)) {
         return { error: "Only http(s) URLs are supported." };
       }
-
-      // Fetch with simple timeout
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), timeoutMs);
       const res = await fetch(url, { signal: ctrl.signal }).catch((e) => ({
@@ -81,19 +91,16 @@ export function registerFsTools(tools, { logEntry } = {}) {
       const b64 = Buffer.from(ab).toString("base64");
       const bytes = ab.byteLength;
 
-      // Determine final path
       const looksLikeDir = to.endsWith("/");
       const fileName = looksLikeDir
         ? guessName({ url, contentType, fallback: "download.bin" })
         : "";
       const dest = looksLikeDir ? path.posix.join(to, fileName) : to;
 
-      // Ensure parent dir exists
       const dir = path.posix.dirname(dest);
-      await svc.fsMkdir({ ws, path: dir, recursive: true });
+      await fsMkdir({ ws, path: dir, recursive: true });
 
-      // Write file (binary via base64)
-      await svc.fsApply({
+      await fsApply({
         ws,
         files: [
           {
@@ -123,7 +130,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
     description: "List available workspaces",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     safe: true,
-    handler: () => svc.fsWorkspaces(),
+    handler: () => fsWorkspaces(),
     tags: ["FS"],
   });
 
@@ -140,7 +147,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       additionalProperties: false,
     },
     safe: true,
-    handler: (args) => svc.fsList(args),
+    handler: (args) => fsList(args),
     tags: ["FS"],
   });
 
@@ -165,7 +172,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       additionalProperties: false,
     },
     safe: true,
-    handler: (args) => svc.fsReadSnapshot(args),
+    handler: (args) => fsReadSnapshot(args),
     tags: ["FS"],
   });
 
@@ -204,7 +211,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsWriteSnapshot(args),
+    handler: (args) => fsWriteSnapshot(args),
     tags: ["FS", "BATCH"],
   });
 
@@ -218,7 +225,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       additionalProperties: false,
     },
     safe: true,
-    handler: (args) => svc.fsRead(args),
+    handler: (args) => fsRead(args),
     tags: ["FS"],
   });
 
@@ -241,38 +248,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       additionalProperties: false,
     },
     safe: true,
-    handler: (args) => svc.fsBundle(args),
-    tags: ["FS"],
-  });
-
-  // tools.js (append near the others)
-  tools.define({
-    name: "fsSnapshot",
-    description:
-      "AI-friendly snapshot of a project: files only, text only, with ignore rules. Returns { files: [{ path, name, content }] }",
-    parameters: {
-      type: "object",
-      required: ["ws"],
-      properties: {
-        ws: { type: "string" },
-        path: { type: "string", default: "." },
-        recursive: { type: "boolean", default: true },
-        includeHidden: { type: "boolean", default: true },
-        ignore: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Patterns to skip (e.g. 'node_modules/', 'dist/', 'package-lock.json')",
-        },
-        maxFiles: { type: "integer", default: 500 },
-        maxBytesTotal: { type: "integer", default: 2000000 },
-        maxBytesPerFile: { type: "integer", default: 2000000 },
-        concurrency: { type: "integer", default: 8 },
-      },
-      additionalProperties: false,
-    },
-    safe: true,
-    handler: (args) => svc.fsSnapshot(args),
+    handler: (args) => fsBundle(args),
     tags: ["FS"],
   });
 
@@ -290,7 +266,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       additionalProperties: false,
     },
     handler: async (args) => {
-      const out = await svc.fsWrite(args);
+      const out = await fsWrite(args);
       if (logEntry && !out.error) {
         try {
           logEntry({
@@ -323,11 +299,9 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsApply(args),
+    handler: (args) => fsApply(args),
     tags: ["FS"],
   });
-
-  // tools.js (append these tool definitions after existing ones)
 
   tools.define({
     name: "fsMkdir",
@@ -343,7 +317,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       additionalProperties: false,
     },
     handler: (args) =>
-      svc.fsMkdir({ ws: args.ws, path: args.path, recursive: args.recursive }),
+      fsMkdir({ ws: args.ws, path: args.path, recursive: args.recursive }),
     tags: ["FS"],
   });
 
@@ -360,11 +334,10 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsRename(args),
+    handler: (args) => fsRename(args),
     tags: ["FS"],
   });
 
-  // Alias, if you prefer move semantics in clients
   tools.define({
     name: "fsMove",
     description: "Move a file/directory (alias of fsRename; EXDEV-safe)",
@@ -378,7 +351,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsMove(args),
+    handler: (args) => fsMove(args),
     tags: ["FS"],
   });
 
@@ -396,7 +369,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsDelete(args),
+    handler: (args) => fsDelete(args),
     tags: ["FS"],
   });
 
@@ -415,7 +388,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsCopy(args),
+    handler: (args) => fsCopy(args),
     tags: ["FS"],
   });
 
@@ -431,7 +404,7 @@ export function registerFsTools(tools, { logEntry } = {}) {
       },
       additionalProperties: false,
     },
-    handler: (args) => svc.fsTouch(args),
+    handler: (args) => fsTouch(args),
     tags: ["FS"],
   });
 }

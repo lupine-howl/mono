@@ -1,19 +1,10 @@
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createFsService } from "@loki/file-browser";
+// ⬇️ no service; use standalone FS helpers
+import { configureFs, getWorkspacePath } from "@loki/file-browser";
 
 const execFileAsync = promisify(execFile);
-
-// Helper: resolve absolute workspace path from ws id/name using fs service
-async function resolveWorkspacePath(svc, ws) {
-  const j = await svc.fsWorkspaces();
-  const list = Array.isArray(j?.workspaces) ? j.workspaces : [];
-  const found =
-    list.find((w) => w.id === ws) || list.find((w) => w.name === ws);
-  if (!found) throw new Error(`Unknown workspace: ${ws}`);
-  return found.path;
-}
 
 async function runGit(cwd, args, { timeout = 15000 } = {}) {
   try {
@@ -43,7 +34,6 @@ async function currentBranch(cwd) {
 }
 
 function parsePorcelain(txt) {
-  // Very simple parser for `git status --porcelain`
   const lines = (txt || "").split(/\r?\n/).filter(Boolean);
   const staged = [];
   const unstaged = [];
@@ -53,8 +43,6 @@ function parsePorcelain(txt) {
   for (const ln of lines) {
     const x = ln.slice(0, 1);
     const y = ln.slice(1, 2);
-    // Support rename format: R  old -> new
-    // General: XY <path>
     const rest = ln.slice(3).trim();
     const name = rest.includes(" -> ") ? rest.split(" -> ").pop() : rest;
     if (x === "?" || y === "?") {
@@ -72,12 +60,13 @@ function parsePorcelain(txt) {
 }
 
 export function registerGitTools(tools, { root } = {}) {
-  // Keep same root heuristic as fs tools: two levels up from the running app
+  // Same root heuristic; or rely on WS_ROOT/WORKSPACES_ROOT env and skip this
   const effectiveRoot = root || path.resolve(process.cwd(), "../../");
-  const fsSvc = createFsService({ root: effectiveRoot });
+  configureFs({ root: effectiveRoot });
 
   async function getCwd(ws) {
-    const p = await resolveWorkspacePath(fsSvc, ws);
+    // getWorkspacePath() throws if the workspace is unknown
+    const p = await getWorkspacePath(ws);
     await ensureRepo(p);
     return p;
   }
@@ -227,7 +216,7 @@ export function registerGitTools(tools, { root } = {}) {
       const fmt = "%H\t%h\t%an\t%ad\t%s";
       const r = await runGit(cwd, [
         "log",
-        `-n`,
+        "-n",
         String(Math.max(1, Math.min(500, max))),
         `--pretty=format:${fmt}`,
         "--date=iso-strict",
@@ -238,8 +227,7 @@ export function registerGitTools(tools, { root } = {}) {
         .filter(Boolean)
         .map((ln) => {
           const [hash, short, author, date, ...rest] = ln.split("\t");
-          const subject = rest.join("\t");
-          return { hash, short, author, date, subject };
+          return { hash, short, author, date, subject: rest.join("\t") };
         });
       return { ws, items };
     },
@@ -324,7 +312,6 @@ export function registerGitTools(tools, { root } = {}) {
     tags: ["GIT"],
   });
 
-  // New: push and pull
   tools.define({
     name: "gitPush",
     description:
@@ -366,7 +353,12 @@ export function registerGitTools(tools, { root } = {}) {
     handler: async ({ ws, remote = "origin", branch, rebase = true }) => {
       const cwd = await getCwd(ws);
       const br = branch && branch.trim() ? branch : await currentBranch(cwd);
-      const args = ["pull", ...(rebase ? ["--rebase"] : ["--ff-only"]), remote, br];
+      const args = [
+        "pull",
+        ...(rebase ? ["--rebase"] : ["--ff-only"]),
+        remote,
+        br,
+      ];
       const r = await runGit(cwd, args, { timeout: 300000 });
       return r.ok ? { ok: true, output: r.stdout } : { error: r.error };
     },
