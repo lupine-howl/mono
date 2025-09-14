@@ -82,12 +82,13 @@ export class BundleViewerAdvanced extends LitElement {
         <file-bundle-bar
           .title=${title}
           .canRefresh=${canRefresh}
-          .hasText=${false}
+          .hasText=${hasBundle}
           .hasBundle=${hasBundle}
           .showOptions=${false}
           .refreshLabel=${"Reload"}
           @refresh=${() => this._load(true)}
           @download=${this._download}
+          @copy=${this._copy}
         ></file-bundle-bar>
 
         ${this._renderBody()}
@@ -258,6 +259,26 @@ export class BundleViewerAdvanced extends LitElement {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  _copy = async () => {
+    if (!this._bundle) return;
+    const text = JSON.stringify(this._bundle, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for non-secure contexts or denied clipboard permission
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } finally {
+        document.body.removeChild(ta);
+      }
+    }
   }
 }
 
