@@ -1,7 +1,7 @@
 // src/ui/task-list.js
 import { LitElement, html, css } from "lit";
 import { repeat } from "lit/directives/repeat.js";
-import { TaskController } from "../shared/lib/TaskController.js";
+import { TaskController } from "../shared/TaskController.js";
 
 export class TaskList extends LitElement {
   static styles = css`
@@ -82,7 +82,8 @@ export class TaskList extends LitElement {
     this._draftTitle = "";
     this._draftWorkspaceId = "";
     this._draftToolId = "";
-    this._filterWorkspaceId = localStorage.getItem("tasks:filterWorkspaceId") || "";
+    this._filterWorkspaceId =
+      localStorage.getItem("tasks:filterWorkspaceId") || "";
   }
 
   #add = () => {
@@ -139,11 +140,20 @@ export class TaskList extends LitElement {
         <input
           placeholder="Filter by workspaceId"
           .value=${this._filterWorkspaceId}
-          @input=${(e) => {this._filterWorkspaceId = e.target.value;localStorage.setItem("tasks:filterWorkspaceId",this._filterWorkspaceId);}}
+          @input=${(e) => {
+            this._filterWorkspaceId = e.target.value;
+            localStorage.setItem(
+              "tasks:filterWorkspaceId",
+              this._filterWorkspaceId
+            );
+          }}
         />
         <button
           type="button"
-          @click=${() => {this._filterWorkspaceId = "";localStorage.setItem("tasks:filterWorkspaceId","");}}
+          @click=${() => {
+            this._filterWorkspaceId = "";
+            localStorage.setItem("tasks:filterWorkspaceId", "");
+          }}
           ?disabled=${!(this._filterWorkspaceId || "").trim()}
           title="Clear workspace filter"
         >

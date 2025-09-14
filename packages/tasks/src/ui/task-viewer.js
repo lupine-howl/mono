@@ -1,6 +1,6 @@
 // src/ui/task-viewer.js
 import { LitElement, html, css } from "lit";
-import { TaskController } from "../shared/lib/TaskController.js";
+import { TaskController } from "../shared/TaskController.js";
 
 export class TaskViewer extends LitElement {
   static styles = css`
