@@ -5,7 +5,7 @@ export const gitCommit = {
   description: "Create a commit from staged changes.",
   parameters: {
     type: "object",
-    required: ["ws", "subject"],
+    required: ["ws", "subject", "body"],
     properties: {
       ws: { type: "string" },
       subject: { type: "string" },

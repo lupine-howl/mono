@@ -29,7 +29,26 @@ function formatToolMeta(meta = {}) {
 
 export async function submit(svc, prompt) {
   const text = String(prompt || "").trim();
-  if (!text) return;
+
+  // Prepare an outcome we’ll return at the end
+  const outcome = {
+    ok: false,
+    error: null,
+    called: null, // tool name (if any)
+    args: null, // tool args (if any)
+    meta: null, // tool_meta (if any)
+    executed: false, // whether we ran the tool
+    executedResult: undefined, // result from execution (if ran)
+    ai: null, // raw AI response
+    userMessageId: null,
+    placeholderMessageId: null,
+  };
+
+  if (!text) {
+    outcome.ok = false;
+    outcome.error = "EMPTY_PROMPT";
+    return outcome;
+  }
 
   const ctx = [];
   if (svc.state.context) ctx.push(...svc.state.context);
@@ -42,6 +61,7 @@ export async function submit(svc, prompt) {
     kind: "chat",
     attachments: ctx,
   });
+  outcome.userMessageId = userId;
 
   // placeholder assistant message (child of user)
   let placeholderId = pushMessage(svc, {
@@ -50,6 +70,7 @@ export async function submit(svc, prompt) {
     kind: "tool_waiting",
     parentId: userId,
   });
+  outcome.placeholderMessageId = placeholderId;
 
   svc.set({ loading: true });
 
@@ -62,8 +83,10 @@ export async function submit(svc, prompt) {
     });
 
     const payload = { model: svc.state.model || undefined, messages };
-    if (svc.state.mode === "off") payload.tool_choice = "none";
-    else if (
+
+    if (svc.state.mode === "off") {
+      payload.tool_choice = "none";
+    } else if (
       ["force", "run"].includes(svc.state.mode) &&
       (svc.state.toolName || toolsService.get()?.toolName)
     ) {
@@ -82,14 +105,17 @@ export async function submit(svc, prompt) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
+
     const js = await r.json();
+    outcome.ai = js;
+
     svc.log("submit ←", { ok: r.ok, status: r.status, js });
     if (!r.ok) throw new Error(js?.error || `${r.status} ${r.statusText}`);
 
     svc.set({ aiResult: js });
 
     if (js.content) {
-      updateMessage(svc, placeholderId, {
+      updateMessage(svc, outcome.placeholderMessageId, {
         role: "assistant",
         content: js.content,
         kind: "chat",
@@ -118,6 +144,10 @@ export async function submit(svc, prompt) {
       const { _meta: _discard, ...cleanArgs } = args;
       args = cleanArgs;
 
+      outcome.called = called;
+      outcome.args = { ...args };
+      outcome.meta = meta ?? null;
+
       await toolsService.setTool(called);
       toolsService.setValues({ ...args });
       svc.set({ toolName: called, toolArgs: { ...args } });
@@ -125,22 +155,22 @@ export async function submit(svc, prompt) {
       // show friendly rationale first
       const metaText = formatToolMeta(meta);
       if (metaText) {
-        updateMessage(svc, placeholderId, {
+        updateMessage(svc, outcome.placeholderMessageId, {
           role: "assistant",
           content: metaText,
           kind: "chat",
         });
-        placeholderId = pushMessage(svc, {
+        outcome.placeholderMessageId = pushMessage(svc, {
           role: "assistant",
           content: JSON.stringify({ called, args }, null, 2),
           kind: "tool_request",
           name: called,
           args,
           meta,
-          parentId: userId,
+          parentId: outcome.userMessageId,
         });
       } else {
-        updateMessage(svc, placeholderId, {
+        updateMessage(svc, outcome.placeholderMessageId, {
           role: "assistant",
           content: JSON.stringify({ called, args }, null, 2),
           kind: "tool_request",
@@ -149,23 +179,34 @@ export async function submit(svc, prompt) {
         });
       }
 
-      if (svc.state.mode === "run") {
-        await svc.confirmToolRequest(placeholderId);
-      } else if (
-        !Object.prototype.hasOwnProperty.call(js, "executed_result") &&
-        svc.state.autoExecute
-      ) {
-        await svc.confirmToolRequest(placeholderId);
+      // Respect executed_result if your backend returns it embedded
+      if (Object.prototype.hasOwnProperty.call(js, "executed_result")) {
+        outcome.executed = true;
+        outcome.executedResult = js.executed_result;
+      } else if (svc.state.mode === "run") {
+        const res = await svc.confirmToolRequest(outcome.placeholderMessageId);
+        outcome.executed = true;
+        outcome.executedResult = res;
+      } else if (svc.state.autoExecute) {
+        const res = await svc.confirmToolRequest(outcome.placeholderMessageId);
+        outcome.executed = true;
+        outcome.executedResult = res;
       }
     }
+
+    outcome.ok = true;
   } catch (e) {
     svc.log("submit error", e);
-    updateMessage(svc, placeholderId, {
+    updateMessage(svc, outcome.placeholderMessageId, {
       role: "assistant",
       content: `⚠️ ${e}`,
       kind: "chat",
     });
+    outcome.ok = false;
+    outcome.error = String(e?.message || e);
   } finally {
     svc.set({ loading: false });
   }
+
+  return outcome; // ← single, final return
 }
