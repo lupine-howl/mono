@@ -38,4 +38,5 @@ export class GitController {
   checkout = (ws, opts) => this.service.checkout(ws, opts);
   push = (ws, opts) => this.service.push(ws, opts);
   pull = (ws, opts) => this.service.pull(ws, opts);
+  generateCommit = (ws, opts) => this.service.generateCommit(ws, opts);
 }

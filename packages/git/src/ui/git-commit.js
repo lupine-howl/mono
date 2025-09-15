@@ -53,6 +53,8 @@ export class GitCommit extends LitElement {
     _body: { state: true },
     _loading: { state: true },
     _msg: { state: true },
+    _genLoading: { state: true },
+    _userEdited: { state: true },
   };
 
   constructor() {
@@ -66,6 +68,8 @@ export class GitCommit extends LitElement {
     this._body = "";
     this._loading = false;
     this._msg = "";
+    this._genLoading = false;
+    this._userEdited = false;
 
     this._onChange = (e) => {
       const { ws } = e.detail || {};
@@ -79,6 +83,15 @@ export class GitCommit extends LitElement {
     this.fb.removeEventListener?.("files:change", this._onChange);
   }
 
+  updated() {
+    // If a draft exists and user hasn't typed yet, adopt it.
+    const draft = this.ctrl?.state?.commitDraft;
+    if (draft && !this._userEdited) {
+      if (draft.subject && this._subject !== draft.subject) this._subject = draft.subject;
+      if (typeof draft.body === "string" && this._body !== draft.body) this._body = draft.body;
+    }
+  }
+
   render() {
     return html`
       <div class="row">
@@ -86,8 +99,9 @@ export class GitCommit extends LitElement {
           class="field"
           placeholder="Commit subject"
           .value=${this._subject}
-          @input=${(e) => (this._subject = e.target.value)}
+          @input=${(e) => { this._subject = e.target.value; this._userEdited = true; }}
         />
+        <button class="btn" @click=${this._generate} ?disabled=${!this._ws || this._genLoading}>Generate</button>
         <button
           class="btn"
           @click=${this._doCommit}
@@ -100,10 +114,27 @@ export class GitCommit extends LitElement {
         class="area"
         placeholder="Description (optional)"
         .value=${this._body}
-        @input=${(e) => (this._body = e.target.value)}
+        @input=${(e) => { this._body = e.target.value; this._userEdited = true; }}
       ></textarea>
       ${this._msg ? html`<div class="hint">${this._msg}</div>` : ""}
     `;
+  }
+
+  async _generate() {
+    if (!this._ws) return;
+    this._genLoading = true;
+    try {
+      const r = await this.ctrl.generateCommit(this._ws, {});
+      if (r?.subject) {
+        this._subject = r.subject;
+        this._body = r.body || "";
+        this._userEdited = false; // reset flag as we just applied new content
+      }
+    } catch (e) {
+      this._msg = e?.message || String(e);
+    } finally {
+      this._genLoading = false;
+    }
   }
 
   async _doCommit() {
@@ -120,6 +151,7 @@ export class GitCommit extends LitElement {
       this._msg = output && output.trim() ? output : "Commit created.";
       this._subject = "";
       this._body = "";
+      this._userEdited = false;
       this.dispatchEvent(
         new CustomEvent("git-commit:done", { bubbles: true, composed: true })
       );

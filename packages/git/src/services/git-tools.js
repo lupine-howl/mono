@@ -11,6 +11,7 @@ import { gitBranchList } from "./tools/gitBranchList.js";
 import { gitCheckout } from "./tools/gitCheckout.js";
 import { gitPush } from "./tools/gitPush.js";
 import { gitPull } from "./tools/gitPull.js";
+import { gitGenerateCommit } from "./tools/gitGenerateCommit.js";
 
 export function registerGitTools(tools, { root } = {}) {
   // Configure FS root once (optional if WS_ROOT/WORKSPACES_ROOT env is set)
@@ -27,6 +28,7 @@ export function registerGitTools(tools, { root } = {}) {
     gitCheckout,
     gitPush,
     gitPull,
+    gitGenerateCommit,
   ];
 
   for (const spec of specs) {

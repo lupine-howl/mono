@@ -15,6 +15,7 @@ export class GitStore {
       log: [],                // [{ hash, short, author, date, subject }]
       diff: null,             // { path?, cached?, commit?, text }
       selectedCommit: null,   // hash
+      commitDraft: null,      // { subject, body, source, generatedAt }
       lastError: null,
       lastRunAt: 0,
     };
@@ -100,6 +101,12 @@ export class GitStore {
   selectCommit(hash) {
     this.state = { ...this.state, selectedCommit: hash ?? null };
     this._notify({ op: "select:commit", hash });
+  }
+
+  setCommitDraft(subject, body = "", meta = {}) {
+    const draft = { subject: String(subject || ""), body: String(body || ""), source: meta.source || null, generatedAt: Date.now() };
+    this.state = { ...this.state, commitDraft: draft };
+    this._notify({ op: "commit:draft", ...meta });
   }
 }
 

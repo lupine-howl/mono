@@ -38,6 +38,10 @@ export class GitUIService {
       }
     });
 
+    rpc.onCall("gitGenerateCommit", ({ args, result }) => {
+      if (result?.subject) this.store.setCommitDraft(result.subject, result.body || "", { ws: args?.ws, source: result.source });
+    });
+
     // For mutating ops, heuristically refresh status when called elsewhere
     for (const name of [
       "gitAdd",
@@ -84,6 +88,14 @@ export class GitUIService {
     if (res?.error) throw new Error(res.error);
     this.store.setDiff({ text: res.diff || "", path, cached, commit });
     return res.diff || "";
+  }
+
+  // ---- Commit message generation ----
+  async generateCommit(ws, { preferStaged = true, maxFilesInBody = 20 } = {}) {
+    const r = await rpc.gitGenerateCommit({ ws, preferStaged, maxFilesInBody });
+    if (r?.error) throw new Error(r.error);
+    if (r?.subject) this.store.setCommitDraft(r.subject, r.body || "", { ws, source: r.source });
+    return r;
   }
 
   // ---- Commands (mutating) ----

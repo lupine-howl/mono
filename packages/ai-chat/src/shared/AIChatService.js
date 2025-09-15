@@ -8,6 +8,7 @@ import { syncMessages as syncMessagesFn } from "./persistence.js";
 import * as del from "./deletions.js";
 import * as tools from "./tools.js";
 import { submit as submitFn } from "./submit.js";
+import { callAITool as callAIToolFn } from "./callAITool.js";
 
 export class AIChatService extends EventTarget {
   constructor(opts = {}) {
@@ -119,6 +120,10 @@ export class AIChatService extends EventTarget {
   // ===== Core submit =====
   async submit(prompt) {
     return submitFn(this, prompt);
+  }
+
+  async callAITool(options) {
+    return callAIToolFn(this, options);
   }
 
   // ===== setters / config =====
