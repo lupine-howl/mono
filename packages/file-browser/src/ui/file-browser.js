@@ -106,6 +106,36 @@ export class FileTree extends LitElement {
     .spacer {
       width: 14px;
     }
+
+    /* context menu */
+    .ctx {
+      position: fixed;
+      z-index: 99999;
+      min-width: 160px;
+      background: #0f0f12;
+      border: 1px solid #2a2a30;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+    .ctx button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      color: inherit;
+      font: inherit;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+    .ctx button:hover { background: #16161b; }
+    .ctx .danger { color: #ff6b6b; }
+    .ctx hr {
+      border: 0;
+      border-top: 1px solid #23232a;
+      margin: 4px 0;
+    }
   `;
 
   // internal state only
@@ -117,6 +147,13 @@ export class FileTree extends LitElement {
     _error: { state: true },
     _selectedPath: { state: true },
     _selectedType: { state: true }, // 'file' | 'dir' | undefined
+
+    // context menu state
+    _menuOpen: { state: true },
+    _menuX: { state: true },
+    _menuY: { state: true },
+    _menuTargetPath: { state: true },
+    _menuTargetType: { state: true },
 
     // public configurable list of names to ignore (files or directories).
     // By default we skip node_modules, dist, and package lock (common noise).
@@ -139,6 +176,13 @@ export class FileTree extends LitElement {
     this._error = null;
     this._selectedPath = null;
     this._selectedType = null;
+
+    // context menu
+    this._menuOpen = false;
+    this._menuX = 0;
+    this._menuY = 0;
+    this._menuTargetPath = null;
+    this._menuTargetType = null;
 
     // default ignores
     this.ignores = ["/node_modules", "package.lock", "/dist"];
@@ -237,6 +281,8 @@ export class FileTree extends LitElement {
           ? this._renderDir(root, 0)
           : html`<div class="hint">No data yet.</div>`}
       </div>
+
+      ${this._menuOpen ? this._renderMenu() : ""}
     `;
   }
 
@@ -263,6 +309,7 @@ export class FileTree extends LitElement {
           class=${`node ${selected ? "selected" : ""}`}
           @click=${(e) => this._onSelectItem(e, item, dirNode.path)}
           @dblclick=${isDir ? (e) => this._onDblClickDir(e, item, dirNode.path) : null}
+          @contextmenu=${(e) => this._onContextMenu(e, item, dirNode.path)}
           title=${item.name}
         >
           ${this._indent(depth)}
@@ -348,6 +395,121 @@ export class FileTree extends LitElement {
   _goUp = () => {
     const p = this._parentOf(this._cwd);
     if (p && p !== this._cwd) this._onDblClickDir(new Event("noop"), p);
+  };
+
+  // --- context menu ---
+  _onContextMenu(e, item, parentPath) {
+    e.preventDefault();
+    e.stopPropagation();
+    const abs = typeof item === "string" ? item : this._join(parentPath, item.name);
+    const type = typeof item === "string" ? "dir" : item.type;
+    this._menuTargetPath = abs;
+    this._menuTargetType = type;
+    this._menuX = e.clientX;
+    this._menuY = e.clientY;
+    this._menuOpen = true;
+    // close handlers
+    this._onGlobalKey = (ev) => {
+      if (ev.key === "Escape") this._closeMenu();
+    };
+    this._onGlobalDown = (ev) => {
+      // clicks outside the menu close it
+      const path = ev.composedPath?.() || [];
+      const inMenu = path.some((n) => n?.classList?.contains?.("ctx"));
+      if (!inMenu) this._closeMenu();
+    };
+    window.addEventListener("keydown", this._onGlobalKey, { capture: true });
+    window.addEventListener("mousedown", this._onGlobalDown, { capture: true });
+  }
+
+  _renderMenu() {
+    const style = `left:${this._menuX}px; top:${this._menuY}px;`;
+    return html`
+      <div class="ctx" style=${style} @mousedown=${(e) => e.stopPropagation()} @contextmenu=${(e)=>{e.preventDefault();e.stopPropagation();}}>
+        <button @click=${this._actionNewFile}>New file</button>
+        <button @click=${this._actionNewFolder}>New folder</button>
+        <hr />
+        <button @click=${this._actionRename}>Rename</button>
+        <button class="danger" @click=${this._actionDelete}>Delete</button>
+      </div>
+    `;
+  }
+
+  _closeMenu() {
+    this._menuOpen = false;
+    try { window.removeEventListener("keydown", this._onGlobalKey, { capture: true }); } catch {}
+    try { window.removeEventListener("mousedown", this._onGlobalDown, { capture: true }); } catch {}
+  }
+
+  _getCreateBaseDir() {
+    const t = this._menuTargetType;
+    const p = this._menuTargetPath;
+    return t === "dir" ? p : this._parentOf(p);
+  }
+
+  _basename(p) {
+    if (!p) return "";
+    const s = p.replace(/\/+$/, "");
+    const i = s.lastIndexOf("/");
+    return i >= 0 ? s.slice(i + 1) : s;
+  }
+
+  _actionNewFile = async () => {
+    const base = this._getCreateBaseDir();
+    const name = prompt("New file name", "new-file.txt");
+    this._closeMenu();
+    if (!name) return;
+    const newPath = this._join(base, name);
+    await this.controller.touch(newPath);
+    await this._loadDir(base, true);
+    this._setOpen(base, true);
+    this.controller.select(newPath, "file");
+  };
+
+  _actionNewFolder = async () => {
+    const base = this._getCreateBaseDir();
+    const name = prompt("New folder name", "new-folder");
+    this._closeMenu();
+    if (!name) return;
+    const newPath = this._join(base, name);
+    await this.controller.mkdir(newPath, true);
+    await this._loadDir(base, true);
+    this._setOpen(base, true);
+    this.controller.select(newPath, "dir");
+  };
+
+  _actionRename = async () => {
+    const src = this._menuTargetPath;
+    const parent = this._parentOf(src);
+    const cur = this._basename(src);
+    const next = prompt("Rename to", cur);
+    this._closeMenu();
+    if (!next || next === cur) return;
+    const dest = this._join(parent, next);
+    await this.controller.rename(src, dest);
+    await this._loadDir(parent, true);
+    if (this._selectedPath === src) {
+      this._selectedPath = dest;
+      this._selectedType = this._menuTargetType;
+      this.requestUpdate();
+      this.controller.select(dest, this._menuTargetType);
+    }
+  };
+
+  _actionDelete = async () => {
+    const src = this._menuTargetPath;
+    const parent = this._parentOf(src);
+    const ok = confirm(`Delete ${src}?`);
+    this._closeMenu();
+    if (!ok) return;
+    await this.controller.delete([src], { recursive: true, force: true });
+    await this._loadDir(parent, true);
+    if (this._selectedPath === src) {
+      this._selectedPath = parent;
+      this._selectedType = "dir";
+      this.requestUpdate();
+      this.controller.select(parent, "dir");
+    }
   };
 
   // --- data loading ---
