@@ -50,9 +50,11 @@ export default ({ components }) => {
             render: () => html`<workspace-select></workspace-select>`,
           },
           {
-            id: `code:browser`,
+            id: `file-browser`,
             label: "📁 Files",
             order: 30,
+            ws:"packages/file-browser",
+            path:"src/ui/file-browser.js",
             render: () => html`<file-browser></file-browser>`,
           },
           {

@@ -1,27 +1,67 @@
-import { gitStatus } from "@loki/git/tools/gitStatus.js";
-import { gitAdd } from "@loki/git/tools/gitAdd.js";
-import { gitRestore } from "@loki/git/tools/gitRestore.js";
-import { gitCommit } from "@loki/git/tools/gitCommit.js";
-import { gitLog } from "@loki/git/tools/gitLog.js";
-import { gitDiff } from "@loki/git/tools/gitDiff.js";
-import { gitBranchList } from "@loki/git/tools/gitBranchList.js";
-import { gitCheckout } from "@loki/git/tools/gitCheckout.js";
-import { gitPush } from "@loki/git/tools/gitPush.js";
-import { gitPull } from "@loki/git/tools/gitPull.js";
-import { gitGenerateCommit } from "@loki/git/tools/gitGenerateCommit.js";
+// index.js (ESM) – auto-load all ./tools/*.js and register them
+import { readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-export default ({ tools }) => {
-  tools.defineMany({
-    gitStatus,
-    gitAdd,
-    gitRestore,
-    gitCommit,
-    gitLog,
-    gitDiff,
-    gitBranchList,
-    gitCheckout,
-    gitPush,
-    gitPull,
-    gitGenerateCommit,
-  });
+/**
+ * A value is considered a "tool object" if:
+ *  - it's an object,
+ *  - it has a string `name`,
+ *  - it has a function `handler`.
+ */
+function isToolObject(v) {
+  return (
+    v &&
+    typeof v === "object" &&
+    typeof v.name === "string" &&
+    typeof v.handler === "function"
+  );
+}
+
+// Helper: load functions from a directory.
+// Picks `default` if it's a function; otherwise:
+//  - if exactly one function export, use it
+//  - else registers all function exports by their export names
+async function loadToolsFromDir(dirUrl) {
+  const dirPath = fileURLToPath(dirUrl);
+  const out = {};
+
+  for (const file of readdirSync(dirPath)) {
+    if (!/\.m?js$/.test(file)) continue;
+    if (file === "index.js" || file === "index.mjs") continue;
+
+    const modUrl = new URL(file, dirUrl);
+    const mod = await import(modUrl);
+
+    const base = file.replace(/\.m?js$/, "");
+
+    if (typeof mod.default === "function") {
+      // Prefer default export; key off filename (gitStatus.js -> gitStatus)
+      out[base] = mod.default;
+      continue;
+    }
+
+    const funcs = Object.entries(mod).filter(([, v]) => isToolObject(v));
+
+    if (funcs.length === 1) {
+      // Single named function export -> key off filename
+      out[base] = funcs[0][1];
+    } else {
+      // Multiple functions exported -> register by their export names
+      for (const [name, fn] of funcs) out[name] = fn;
+    }
+  }
+
+  return out;
+}
+
+export default async ({ tools }) => {
+  // Resolve ../tools relative to this file
+  const toolsDirUrl = new URL("../tools/", import.meta.url);
+
+  const toolDefs = await loadToolsFromDir(toolsDirUrl);
+
+  // toolDefs will look like:
+  // { gitStatus, gitAdd, gitRestore, ... }
+  // (keys come from filenames when default/single export, or from export names)
+  tools.defineMany(toolDefs);
 };
