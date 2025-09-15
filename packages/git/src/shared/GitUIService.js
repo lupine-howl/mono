@@ -1,4 +1,3 @@
-// src/shared/GitUIService.js
 import { getGlobalSingleton } from "@loki/utilities";
 import { rpc } from "@loki/minihttp/util";
 import { getGitStore } from "./GitStore.js";
@@ -201,22 +200,16 @@ export class GitUIService {
     for (const p of files) cat[classify(p)]++;
 
     // context markdown
-    const header = `Repo status:
-- branch: ${branch || "(unknown)"}  (+${ahead}/-${behind})
-- prefer: ${preferStaged ? "staged" : "unstaged"}
-- totals by type: ${
+    const header = `Repo status:\n- branch: ${branch || "(unknown)"}  (+${ahead}/-${behind})\n- prefer: ${preferStaged ? "staged" : "unstaged"}\n- totals by type: ${
       Object.entries(cat)
         .filter(([, n]) => n > 0)
         .map(([k, n]) => `${k}:${n}`)
         .join(", ") || "(none)"
-    }
-`;
+    }\n`;
 
     const listLines =
       files.map((p) => `  - ${p}`).join("\n") || "  (no visible changes)";
-    const body = `Changed files (capped ${maxList}):
-${listLines}
-`;
+    const body = `Changed files (capped ${maxList}):\n${listLines}\n`;
 
     return `${header}\n${body}`.trim();
   }
@@ -311,6 +304,10 @@ ${listLines}
   async commit(ws, { subject, body = "", allowEmpty = false } = {}) {
     const r = await rpc.gitCommit({ ws, subject, body, allowEmpty });
     if (r?.error) throw new Error(r.error);
+    // Clear draft on successful commit so UI inputs reset reactively
+    try {
+      this.store.setCommitDraft("", "", { ws, source: "commit:success" });
+    } catch {}
     await this.status(ws);
     return r.output || "";
   }
