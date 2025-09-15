@@ -2,7 +2,7 @@ import { runGit, getCwd } from "./helpers.js";
 
 export const gitCommit = {
   name: "gitCommit",
-  package: "packages/git",
+  ws: "packages/git",
   path: "src/tools/gitCommit.js",
   description: "Create a commit from staged changes.",
   parameters: {

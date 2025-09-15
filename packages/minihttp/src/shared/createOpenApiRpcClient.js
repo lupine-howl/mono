@@ -279,7 +279,9 @@ export function createOpenApiRpcClient({
       // notify onCall (result) locally
       try {
         const fn = resultHandlers.get(opName);
-        if (typeof fn === "function") {console.log("Calling",opName);fn({ name: opName, result: data, args });}
+        if (typeof fn === "function") {
+          fn({ name: opName, result: data, args });
+        }
       } catch {}
       return data;
     })();

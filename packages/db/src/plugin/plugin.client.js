@@ -6,21 +6,23 @@ import "@loki/db/ui/db-viewer.js";
 export default ({ components }) => {
   const ns = "db";
   components.push({
-    sidebar: [
-    ],
+    sidebar: [],
     body: [
       {
         id: `${ns}:viewer`,
+        ws: "packages/db",
+        path: "src/ui/db-viewer.js",
         label: "📊 DB",
         order: 30,
         render: () => html`<db-viewer></db-viewer>`,
-        left:[      {
-        id: `${ns}:browser`,
-        label: "🗄️ DB Browser",
-        order: 30,
-        render: () => html`<db-browser></db-browser>`,
-      },
-]
+        left: [
+          {
+            id: `${ns}:browser`,
+            label: "🗄️ DB Browser",
+            order: 30,
+            render: () => html`<db-browser></db-browser>`,
+          },
+        ],
       },
     ],
   });

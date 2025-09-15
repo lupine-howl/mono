@@ -423,7 +423,8 @@ export class GithubPluggableApp extends LitElement {
             ? html`<h3
                 @click=${() => {
                   if (ws && path) {
-                    this.fileController.select(path, ws);
+                    this.fileController.setWorkspace(ws);
+                    this.fileController.select(path);
                     this.tabController.setActive("git:code");
                   }
                 }}
@@ -491,7 +492,19 @@ export class GithubPluggableApp extends LitElement {
         <main class="main">
           <div class="main-inner">
             <section class="content ${body?.wrapperStyle || ""}">
-              ${body?.label ? html`<h3>${body.label}</h3>` : ""}
+              ${body?.label
+                ? html`<h3
+                    @click=${() => {
+                      if (body?.ws && body?.path) {
+                        this.fileController.setWorkspace(body.ws);
+                        this.fileController.select(body.path);
+                        this.tabController.setActive("git:code");
+                      }
+                    }}
+                  >
+                    ${body.label}
+                  </h3>`
+                : ""}
               ${body?.render
                 ? body.render({ controllers: this.controllers })
                 : html`<div style="opacity:.7">No content.</div>`}

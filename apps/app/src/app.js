@@ -15,8 +15,4 @@ export class App extends GithubPluggableApp {
     return config.components;
   }
 }
-rpc.onCall("fsList", async (args) => {
-  console.log("fsList called with args:", args);
-  return ["file1.txt", "file2.txt", "file3.txt"];
-});
 customElements.define("app-root", App);
