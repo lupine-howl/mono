@@ -80,14 +80,6 @@ export function buildChatMessages({
   const ci = (customInstructions ?? "").trim();
   if (ci) msgs.push({ role: "system", content: ci });
 
-  // Context: each entry becomes its own message (default role: system)
-  if (Array.isArray(context) && context.length) {
-    for (const c of context) {
-      const m = normalizeMessage(c, "system");
-      if (m) msgs.push(m);
-    }
-  }
-
   // History: pass through, coercing content to string
   const H = Array.isArray(history) ? history : [];
   for (let i = 0; i < H.length; i++) {
@@ -101,6 +93,14 @@ export function buildChatMessages({
       m.role
     );
     if (normalized) msgs.push(normalized);
+  }
+
+  // Context: each entry becomes its own message (default role: system)
+  if (Array.isArray(context) && context.length) {
+    for (const c of context) {
+      const m = normalizeMessage(c, "system");
+      if (m) msgs.push(m);
+    }
   }
 
   return msgs;
