@@ -180,10 +180,10 @@ export async function submit(svc, prompt) {
       }
 
       // Respect executed_result if your backend returns it embedded
-      if (Object.prototype.hasOwnProperty.call(js, "executed_result")) {
+      /*if (Object.prototype.hasOwnProperty.call(js, "executed_result")) {
         outcome.executed = true;
         outcome.executedResult = js.executed_result;
-      } else if (svc.state.mode === "run") {
+      } else */if (svc.state.mode === "run") {
         const res = await svc.confirmToolRequest(outcome.placeholderMessageId);
         outcome.executed = true;
         outcome.executedResult = res;

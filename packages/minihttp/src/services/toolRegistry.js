@@ -37,6 +37,25 @@ export function createToolRegistry({
     return name;
   }
 
+  /**
+   * defineMany({ nameA: { ...toolProps }, nameB: { ...toolProps } })
+   *
+   * Minimal helper to bulk-define tools where each key is the tool name.
+   * Returns an array of defined names, throws immediately on the first error.
+   */
+  function defineMany(dict) {
+    if (!dict || typeof dict !== "object" || Array.isArray(dict)) {
+      throw new Error("defineMany expects a dictionary/object of tools");
+    }
+    const names = [];
+    for (const [name, spec] of Object.entries(dict)) {
+      // Allow spec to be undefined/null; spread safely
+      const s = spec ?? {};
+      names.push(define({ name, ...s }));
+    }
+    return names;
+  }
+
   // --- tiny validator + query coercion ---
   function validate(schema, source) {
     if (!schema || schema.type !== "object")
@@ -224,6 +243,7 @@ export function createToolRegistry({
 
   return {
     define,
+    defineMany,
     attach,
     mountOpenApi,
     toOpenApi,
