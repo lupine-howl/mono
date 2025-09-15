@@ -1,12 +1,10 @@
 import { LitElement, html, css } from "lit";
 import { FileBrowserController } from "@loki/file-browser/util";
-import { gitStatus, gitPush, gitPull } from "../shared/gitClient.js";
+import { GitController } from "../shared/GitController.js";
 
 export class GitSync extends LitElement {
   static styles = css`
-    :host {
-      display: block;
-    }
+    :host { display: block; }
     .bar {
       display: flex;
       gap: 8px;
@@ -22,22 +20,12 @@ export class GitSync extends LitElement {
       border-radius: 8px;
       cursor: pointer;
     }
-    .hint {
-      font-size: 12px;
-      opacity: 0.75;
-    }
-    .msg {
-      font-size: 12px;
-      opacity: 0.9;
-      margin-top: 6px;
-    }
+    .hint { font-size: 12px; opacity: 0.75; }
+    .msg { font-size: 12px; opacity: 0.9; margin-top: 6px; }
   `;
 
   static properties = {
     _ws: { state: true },
-    _branch: { state: true },
-    _ahead: { state: true },
-    _behind: { state: true },
     _loading: { state: true },
     _pushing: { state: true },
     _pulling: { state: true },
@@ -47,11 +35,10 @@ export class GitSync extends LitElement {
 
   constructor() {
     super();
-    this.controller = new FileBrowserController({ eventName: "files:change" });
-    this._ws = this.controller.ws || "";
-    this._branch = "";
-    this._ahead = 0;
-    this._behind = 0;
+    this.fb = new FileBrowserController({ eventName: "files:change" });
+    this.ctrl = new GitController(this);
+
+    this._ws = this.fb.ws || "";
     this._loading = false;
     this._pushing = false;
     this._pulling = false;
@@ -65,28 +52,33 @@ export class GitSync extends LitElement {
         this._refresh();
       }
     };
-    this.controller.addEventListener("files:change", this._onChange);
+    this.fb.addEventListener("files:change", this._onChange);
   }
 
   connectedCallback() {
     super.connectedCallback();
     this._refresh();
   }
-
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.controller.removeEventListener?.("files:change", this._onChange);
+    this.fb.removeEventListener?.("files:change", this._onChange);
   }
 
   render() {
-    const canPush = this._ahead > 0;
-    const canPull = this._behind > 0;
+    const st = this.ctrl?.state?.status || {};
+    const branch = st.branch || "";
+    const ahead = Number(st.ahead || 0);
+    const behind = Number(st.behind || 0);
+
+    const canPush = ahead > 0;
+    const canPull = behind > 0;
+
     return html`
       <div class="bar">
         <button class="btn" @click=${() => this._refresh()} ?disabled=${this._loading}>
           Refresh
         </button>
-        <span class="hint">${this._branch ? `branch: ${this._branch}` : ""}</span>
+        <span class="hint">${branch ? `branch: ${branch}` : ""}</span>
       </div>
       <div class="bar">
         <button
@@ -95,7 +87,7 @@ export class GitSync extends LitElement {
           ?disabled=${!this._ws || this._pulling || this._loading || !canPull}
           title="Pull latest from remote"
         >
-          ⬇️ Pull ${this._behind ? `(${this._behind})` : ""}
+          ⬇️ Pull ${behind ? `(${behind})` : ""}
         </button>
         <button
           class="btn"
@@ -103,7 +95,7 @@ export class GitSync extends LitElement {
           ?disabled=${!this._ws || this._pushing || this._loading || !canPush}
           title="Push local commits"
         >
-          ⬆️ Push ${this._ahead ? `(${this._ahead})` : ""}
+          ⬆️ Push ${ahead ? `(${ahead})` : ""}
         </button>
       </div>
       ${this._err ? html`<div class="msg">${this._err}</div>` : ""}
@@ -117,10 +109,7 @@ export class GitSync extends LitElement {
     this._err = null;
     this._msg = "";
     try {
-      const j = await gitStatus({ ws: this._ws });
-      this._branch = j.branch || "";
-      this._ahead = j.ahead || 0;
-      this._behind = j.behind || 0;
+      await this.ctrl.status(this._ws);
     } catch (e) {
       this._err = e?.message || String(e);
     } finally {
@@ -134,14 +123,13 @@ export class GitSync extends LitElement {
     this._err = null;
     this._msg = "";
     try {
-      const r = await gitPush({ ws: this._ws });
-      if (r?.error) throw new Error(r.error);
-      this._msg = r?.output || "Pushed successfully.";
+      const out = await this.ctrl.push(this._ws, {});
+      this._msg = out || "Pushed successfully.";
     } catch (e) {
       this._err = e?.message || String(e);
     } finally {
       this._pushing = false;
-      await this._refresh();
+      // GitUIService.push() already refreshes status; UI will update reactively.
     }
   }
 
@@ -151,14 +139,13 @@ export class GitSync extends LitElement {
     this._err = null;
     this._msg = "";
     try {
-      const r = await gitPull({ ws: this._ws, rebase: true });
-      if (r?.error) throw new Error(r.error);
-      this._msg = r?.output || "Pulled successfully.";
+      const out = await this.ctrl.pull(this._ws, { rebase: true });
+      this._msg = out || "Pulled successfully.";
     } catch (e) {
       this._err = e?.message || String(e);
     } finally {
       this._pulling = false;
-      await this._refresh();
+      // GitUIService.pull() refreshes status; UI will update reactively.
     }
   }
 }

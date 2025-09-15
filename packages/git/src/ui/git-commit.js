@@ -4,16 +4,10 @@ import { GitController } from "../shared/GitController.js";
 
 export class GitCommit extends LitElement {
   static styles = css`
-    :host {
-      display: block;
-    }
-    .row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
+    :host { display: block; }
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
     .field {
+      flex: 1;
       width: 100%;
       padding: 6px 10px;
       border: 1px solid #2a2a30;
@@ -41,10 +35,9 @@ export class GitCommit extends LitElement {
       border-radius: 8px;
       cursor: pointer;
     }
-    .hint {
-      font-size: 12px;
-      opacity: 0.7;
-    }
+    .btn.icon { padding: 6px; min-width: 36px; }
+    .commit { width: 100%; margin-top: 8px; }
+    .hint { font-size: 12px; opacity: 0.7; }
   `;
 
   static properties = {
@@ -59,7 +52,6 @@ export class GitCommit extends LitElement {
 
   constructor() {
     super();
-    // Use FB controller just to keep tracking current workspace
     this.fb = new FileBrowserController({ eventName: "files:change" });
     this.ctrl = new GitController(this);
 
@@ -84,7 +76,6 @@ export class GitCommit extends LitElement {
   }
 
   updated() {
-    // If a draft exists and user hasn't typed yet, adopt it.
     const draft = this.ctrl?.state?.commitDraft;
     if (draft && !this._userEdited) {
       if (draft.subject && this._subject !== draft.subject) this._subject = draft.subject;
@@ -101,21 +92,31 @@ export class GitCommit extends LitElement {
           .value=${this._subject}
           @input=${(e) => { this._subject = e.target.value; this._userEdited = true; }}
         />
-        <button class="btn" @click=${this._generate} ?disabled=${!this._ws || this._genLoading}>Generate</button>
         <button
-          class="btn"
-          @click=${this._doCommit}
-          ?disabled=${!this._ws || !this._subject || this._loading}
-        >
-          Commit
-        </button>
+          class="btn icon"
+          @click=${this._generate}
+          ?disabled=${!this._ws || this._genLoading}
+          title="Generate commit message"
+          aria-label="Generate"
+        >✨</button>
       </div>
+
       <textarea
         class="area"
         placeholder="Description (optional)"
         .value=${this._body}
         @input=${(e) => { this._body = e.target.value; this._userEdited = true; }}
       ></textarea>
+
+      <button
+        class="btn commit"
+        @click=${this._doCommit}
+        ?disabled=${!this._ws || !this._subject || this._loading}
+        title="Create commit"
+      >
+        Commit
+      </button>
+
       ${this._msg ? html`<div class="hint">${this._msg}</div>` : ""}
     `;
   }
@@ -128,7 +129,7 @@ export class GitCommit extends LitElement {
       if (r?.subject) {
         this._subject = r.subject;
         this._body = r.body || "";
-        this._userEdited = false; // reset flag as we just applied new content
+        this._userEdited = false;
       }
     } catch (e) {
       this._msg = e?.message || String(e);
@@ -142,7 +143,6 @@ export class GitCommit extends LitElement {
     this._loading = true;
     this._msg = "";
     try {
-      // Stage everything, then commit — through the Git UI service
       await this.ctrl.add(this._ws, { all: true });
       const output = await this.ctrl.commit(this._ws, {
         subject: this._subject,
@@ -152,9 +152,7 @@ export class GitCommit extends LitElement {
       this._subject = "";
       this._body = "";
       this._userEdited = false;
-      this.dispatchEvent(
-        new CustomEvent("git-commit:done", { bubbles: true, composed: true })
-      );
+      this.dispatchEvent(new CustomEvent("git-commit:done", { bubbles: true, composed: true }));
     } catch (e) {
       this._msg = e?.message || String(e);
     } finally {
