@@ -1,5 +1,6 @@
 import { LitElement, html, css } from "lit";
 import { TabController } from "../shared/TabController.js";
+import { FileBrowserController } from "@loki/file-browser/util";
 
 /** Merge any number of {region: UIItem[]} packs, de-dupe by id, sort by order. */
 function mergeComponents(...packs) {
@@ -322,6 +323,7 @@ export class GithubPluggableApp extends LitElement {
     this._isNarrow = false;
 
     this.tabController = new TabController(this);
+    this.fileController = new FileBrowserController(this);
 
     // let subclass provide plugins
     this.plugins = this.getPlugins?.() ?? [];
@@ -415,9 +417,20 @@ export class GithubPluggableApp extends LitElement {
 
   renderSidebarBlocks(blocks) {
     return blocks.map(
-      ({ label, render, wrapperStyle }) => html`
+      ({ label, render, wrapperStyle, ws, path }) => html`
         <div class=${wrapperStyle || "card"}>
-          ${label ? html`<h3>${label}</h3>` : ""}
+          ${label
+            ? html`<h3
+                @click=${() => {
+                  if (ws && path) {
+                    this.fileController.select(path, ws);
+                    this.tabController.setActive("git:code");
+                  }
+                }}
+              >
+                ${label}
+              </h3>`
+            : ""}
           ${render?.({ controllers: this.controllers }) ??
           html`<div style="opacity:.7">No content.</div>`}
         </div>

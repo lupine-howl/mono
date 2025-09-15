@@ -2,6 +2,8 @@ import { runGit, getCwd } from "./helpers.js";
 
 export const gitAdd = {
   name: "gitAdd",
+  package: "packages/git",
+  path: "src/tools/gitAdd.js",
   description: "Stage files (paths[]) or everything (all=true)",
   parameters: {
     type: "object",

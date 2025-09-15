@@ -35,7 +35,8 @@
     "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
   },
   "dependencies": {
-    "@loki/utilities": "../utilities"
+    "@loki/utilities": "../utilities",
+    "@loki/file-browser": "../file-browser"
   },
   "peerDependencies": {
     "lit": "^3.3.1"

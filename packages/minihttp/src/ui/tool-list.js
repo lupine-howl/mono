@@ -100,10 +100,11 @@ export class ToolList extends LitElement {
     );
   }
 
-  _select(name) {
-    this._value = name;
-    this._menuFor = null;
+  _select(name, ev) {
+    ev?.stopPropagation?.();
     this.controller.setTool(name);
+    this._menuFor = null;
+    try { setActiveTab("tool-viewer"); } catch {}
   }
 
   _toggleMenu(name, ev) {
