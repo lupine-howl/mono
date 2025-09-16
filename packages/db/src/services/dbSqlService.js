@@ -1,45 +1,39 @@
+// db-sql-service.js
 import Database from "better-sqlite3";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { logEntry } from "@loki/http-base";
+import { getGlobalSingleton } from "@loki/utilities";
+
 const uid = () => crypto.randomUUID();
-// replace your existing mapType with these helpers:
+
+// ---------- type helpers -----------------------------------------------------
 
 function inferJsonType(def) {
-  // 1) explicit type
   let t = def?.type;
-  if (Array.isArray(t)) {
-    // prefer first non-null/undefined type
-    t = t.find((v) => v && v !== "null");
-  }
+  if (Array.isArray(t)) t = t.find((v) => v && v !== "null");
   if (typeof t === "string") return t.toLowerCase();
 
-  // 2) infer from enum if no type
   if (Array.isArray(def?.enum) && def.enum.length) {
     const sample = def.enum.find((v) => v !== null && v !== undefined);
-    const kind = typeof sample; // "string" | "number" | "boolean" | "object"
+    const kind = typeof sample;
     if (kind === "number" && Number.isInteger(sample)) return "integer";
     if (kind) return kind;
   }
-
-  // 3) default
   return "string";
 }
 
-// helper (very simple, adjust to your needs)
 const isValidIdent = (s) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s ?? "");
 
 function mapType(def) {
   const t = inferJsonType(def);
-
-  // sqlite affinity mapping
   if (t === "integer" || t === "int") return "INTEGER";
   if (t === "number") return "REAL";
-  if (t === "boolean" || t === "bool") return "INTEGER"; // store 0/1 (normValue already does that)
-  if (t === "object" || t === "array" || t === "json") return "TEXT"; // JSON.stringify in normValue
-  return "TEXT"; // "string" and anything unknown → TEXT
+  if (t === "boolean" || t === "bool") return "INTEGER";
+  if (t === "object" || t === "array" || t === "json") return "TEXT";
+  return "TEXT";
 }
+
 function normValue(v) {
   if (v === undefined || v === null) return null;
   if (typeof v === "boolean") return v ? 1 : 0;
@@ -47,16 +41,21 @@ function normValue(v) {
   if (typeof v === "object") return JSON.stringify(v);
   return v;
 }
+
+// ---------- main service -----------------------------------------------------
+
 export class DbSqlService {
   constructor({ dbPath = "./data/app.db" } = {}) {
-    // ensure parent dir exists
     const dir = path.dirname(dbPath);
     fs.mkdirSync(dir, { recursive: true });
-    this.db = new Database(dbPath);
+    this.dbPath = path.resolve(dbPath);
+    this.db = new Database(this.dbPath);
   }
+
   pragmaTableInfo(table) {
     return this.db.prepare(`PRAGMA table_info("${table}")`).all();
   }
+
   listTables() {
     return this.db
       .prepare(
@@ -65,6 +64,7 @@ export class DbSqlService {
       .all()
       .map((r) => r.name);
   }
+
   ensureTableFromJsonSchema(
     table,
     schema = {},
@@ -73,7 +73,7 @@ export class DbSqlService {
     const props = schema?.properties || {};
     const columns = Object.entries(props).map(([k, def]) => ({
       name: k,
-      type: mapType(def), // "TEXT" for objects (meta), etc.
+      type: mapType(def),
     }));
 
     const exists = this.db
@@ -99,16 +99,11 @@ export class DbSqlService {
       return true;
     }
 
-    // --- DEBUG: what do we have vs want? ---
     const currentInfo = this.pragmaTableInfo(table);
     const current = new Set(currentInfo.map((c) => c.name));
-    const desired = new Set(columns.map((c) => c.name));
-    // quick sanity print once
-    // console.log(`[db] ${table} current:`, [...current].sort(), 'desired:', [...desired].sort());
 
     for (const c of columns) {
       if (!current.has(c.name)) {
-        // Optionally respect NOT NULL/DEFAULT for new columns:
         const def = (schema.properties || {})[c.name] || {};
         const isRequired =
           Array.isArray(schema.required) && schema.required.includes(c.name);
@@ -116,23 +111,14 @@ export class DbSqlService {
         const defaultSql = hasDefault
           ? ` DEFAULT ${JSON.stringify(def.default)}`
           : "";
-        // In SQLite, NOT NULL on an added column is only OK if DEFAULT is provided
         const notNullSql = isRequired && hasDefault ? " NOT NULL" : "";
-
         const sql = `ALTER TABLE "${table}" ADD COLUMN "${c.name}" ${c.type}${notNullSql}${defaultSql}`;
-        try {
-          this.db.prepare(sql).run();
-          // console.log(`[db] Added column ${table}.${c.name} ${c.type}`);
-        } catch (e) {
-          // Surface the issue so you can see it
-          throw new Error(
-            `Failed to add column ${table}.${c.name}: ${e.message}`
-          );
-        }
+        this.db.prepare(sql).run();
       }
     }
     return false;
   }
+
   insert(table, values, { primaryKey = "id" } = {}) {
     const row = { ...values };
     if (!(primaryKey in row)) row[primaryKey] = uid();
@@ -145,32 +131,29 @@ export class DbSqlService {
     this.db.prepare(sql).run(params);
     return this.selectById(table, row[primaryKey], { primaryKey });
   }
+
   update(table, id, patch, { primaryKey = "id" } = {}) {
-    // Ignore empty patch early
     const allEntries = Object.entries(patch || {});
     if (!allEntries.length) return this.selectById(table, id, { primaryKey });
 
-    // Only update known columns, and never the primary key
     const currentCols = new Set(this.pragmaTableInfo(table).map((c) => c.name));
     const entries = allEntries.filter(
-      ([k, v]) => k !== primaryKey && currentCols.has(k)
+      ([k]) => k !== primaryKey && currentCols.has(k)
     );
-
     if (!entries.length) return this.selectById(table, id, { primaryKey });
 
     const assigns = entries.map(([k]) => `"${k}"=@${k}`).join(", ");
     const params = Object.fromEntries(
       entries.map(([k, v]) => [k, normValue(v)])
     );
-
-    // Use a normal named parameter for the WHERE clause
-    params.id = id; // bind as @id
+    params.id = id;
 
     const sql = `UPDATE "${table}" SET ${assigns} WHERE "${primaryKey}"=@id`;
     const info = this.db.prepare(sql).run(params);
     if (info.changes === 0) return null;
     return this.selectById(table, id, { primaryKey });
   }
+
   delete(table, id, { primaryKey = "id" } = {}) {
     const info = this.db
       .prepare(`DELETE FROM "${table}" WHERE "${primaryKey}"=?`)
@@ -178,7 +161,6 @@ export class DbSqlService {
     return { ok: true, removed: info.changes || 0 };
   }
 
-  // In DbSqlService.select():
   select(table, { where = {}, limit = 100, offset = 0, orderBy = null } = {}) {
     const tableName = String(table || "").trim();
     if (!isValidIdent(tableName)) {
@@ -192,11 +174,9 @@ export class DbSqlService {
     });
     const whereSql = clauses.length ? "WHERE " + clauses.join(" AND ") : "";
 
-    // Accept either a raw safe string or structured spec, keep it simple:
     let orderSql = "";
     if (typeof orderBy === "string") {
       const ob = orderBy.trim();
-      // reject the pathological case ORDER BY ""
       if (ob && ob !== '""') orderSql = `ORDER BY ${ob}`;
     }
 
@@ -209,6 +189,7 @@ export class DbSqlService {
 
     return this.db.prepare(sql).all(params);
   }
+
   selectById(table, id, { primaryKey = "id" } = {}) {
     return (
       this.db
@@ -216,6 +197,7 @@ export class DbSqlService {
         .get(id) || null
     );
   }
+
   raw(sql, params = {}) {
     const head = String(sql).trim().slice(0, 6).toUpperCase();
     if (head !== "SELECT" && head !== "PRAGMA") {
@@ -224,3 +206,32 @@ export class DbSqlService {
     return this.db.prepare(sql).all(params);
   }
 }
+
+// ---------- singleton accessors ---------------------------------------------
+
+export function getDbSqlService(opts = {}) {
+  const abs = path.resolve(opts.dbPath ?? "./data/app.db");
+  const key = Symbol.for(`@loki/db-sql:${abs}@1`);
+  return getGlobalSingleton(key, () => new DbSqlService({ dbPath: abs }));
+}
+
+// default singleton instance
+export const dbSqlService = getDbSqlService();
+
+// ---------- convenience helpers using the default singleton -----------------
+
+export const dbInsert = (table, values, opts) =>
+  dbSqlService.insert(table, values, opts);
+
+export const dbUpdate = (table, id, patch, opts) =>
+  dbSqlService.update(table, id, patch, opts);
+
+export const dbDelete = (table, id, opts) =>
+  dbSqlService.delete(table, id, opts);
+
+export const dbSelect = (table, opts) => dbSqlService.select(table, opts);
+
+export const dbSelectById = (table, id, opts) =>
+  dbSqlService.selectById(table, id, opts);
+
+export const dbRaw = (sql, params) => dbSqlService.raw(sql, params);

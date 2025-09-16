@@ -3,7 +3,6 @@
 
 import { LitElement, html, css } from "lit";
 import { ToolsController } from "../shared/ToolsController.js";
-import { ToolsService } from "../shared/ToolsService.js";
 
 const slug = (s) =>
   String(s)
@@ -223,20 +222,7 @@ export class ToolViewer extends LitElement {
   constructor() {
     super();
 
-    const isScoped = this.hasAttribute("static");
-    const svc = isScoped
-      ? new ToolsService({
-          base: this.base || undefined,
-          src: this.src || "/rpc",
-          openapiUrl: this.openapiUrl || "/openapi.json",
-          initialTool: this.tool || "",
-          initialArgs: this.args || null,
-          initialMethod: this.method || null,
-          preferInitial: true,
-        })
-      : undefined;
-
-    this.controller = new ToolsController({ service: svc });
+    this.controller = new ToolsController();
 
     this._tool = null;
     this._schema = null;
@@ -282,15 +268,6 @@ export class ToolViewer extends LitElement {
 
   // Keep private service in sync if attributes change after construction
   updated(changed) {
-    if (!this.static) return;
-    if (changed.has("tool") || changed.has("args") || changed.has("method")) {
-      this.controller?.svc?.setInitialSelection?.({
-        tool: this.tool,
-        args: this.args,
-        method: this.method,
-        prefer: true,
-      });
-    }
     if (
       changed.has("base") ||
       changed.has("src") ||
