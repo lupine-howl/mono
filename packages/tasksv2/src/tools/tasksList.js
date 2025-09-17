@@ -1,7 +1,7 @@
 import { taskStore } from "../shared/TaskStore.js";
 
-export const listTasks = {
-  name: "listTasks",
+export const tasksList = {
+  name: "tasksList",
   description: "List tasks",
   parameters: { type: "object", properties: {}, additionalProperties: false },
 

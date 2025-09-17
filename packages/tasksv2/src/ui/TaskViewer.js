@@ -2,7 +2,7 @@
 import { LitElement, html, css } from "lit";
 import { TaskController } from "../shared/TaskController.js";
 
-export class TaskViewer extends LitElement {
+export class TaskViewerComponent extends LitElement {
   static styles = css`
     :host {
       display: block;
@@ -169,4 +169,8 @@ export class TaskViewer extends LitElement {
 }
 
 if (!customElements.get("task-viewer"))
-  customElements.define("task-viewer", TaskViewer);
+  customElements.define("task-viewer", TaskViewerComponent);
+
+export const TaskViewer = {
+  render: (props) => html`<task-viewer ...=${props}></task-viewer>`,
+};

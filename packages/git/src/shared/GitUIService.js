@@ -16,14 +16,14 @@ export class GitUIService {
 
   // ---- Queries ----
   async status(ws) {
-    const res = await rpc.gitStatus({ ws });
+    const res = await rpc.$call("gitStatus", { ws });
     if (res?.error) throw new Error(res.error);
     this.store.setStatus(ws, res);
     return res;
   }
 
   async branches(ws) {
-    const res = await rpc.gitBranchList({ ws });
+    const res = await rpc.$call("gitBranchList", { ws });
     if (res?.error) throw new Error(res.error);
     this.store.setBranches(res.items || []);
     return res.items || [];
@@ -215,7 +215,7 @@ export class GitUIService {
 
     // Fallback to old RPC generator if AI didn’t propose args (keeps UX from dead-ending)
     try {
-      const r = await rpc.gitGenerateCommit({
+      const r = await rpc.$call("gitGenerateCommit", {
         ws,
         preferStaged,
         maxFilesInBody,
@@ -239,21 +239,26 @@ export class GitUIService {
 
   // ---- Commands (mutating) ----
   async add(ws, { paths = [], all = false } = {}) {
-    const r = await rpc.gitAdd({ ws, paths, all });
+    const r = await rpc.$call("gitAdd", { ws, paths, all });
     if (r?.error) throw new Error(r.error);
     await this.status(ws);
     return true;
   }
 
   async restore(ws, { paths = [], stagedOnly = false, worktree = false } = {}) {
-    const r = await rpc.gitRestore({ ws, paths, stagedOnly, worktree });
+    const r = await rpc.$call("gitRestore", {
+      ws,
+      paths,
+      stagedOnly,
+      worktree,
+    });
     if (r?.error) throw new Error(r.error);
     await this.status(ws);
     return true;
   }
 
   async commit(ws, { subject, body = "", allowEmpty = false } = {}) {
-    const r = await rpc.gitCommit({ ws, subject, body, allowEmpty });
+    const r = await rpc.$call("gitCommit", { ws, subject, body, allowEmpty });
     if (r?.error) throw new Error(r.error);
     // Clear draft on successful commit so UI inputs reset reactively
     try {
@@ -264,14 +269,14 @@ export class GitUIService {
   }
 
   async checkout(ws, { name }) {
-    const r = await rpc.gitCheckout({ ws, name });
+    const r = await rpc.$call("gitCheckout", { ws, name });
     if (r?.error) throw new Error(r.error);
     await Promise.all([this.status(ws), this.branches(ws)]);
     return true;
   }
 
   async push(ws, { remote = "origin", branch } = {}) {
-    const r = await rpc.gitPush({ ws, remote, branch });
+    const r = await rpc.$call("gitPush", { ws, remote, branch });
     if (r?.error) throw new Error(r.error);
     // pushing doesn't change local status, but refresh just in case
     await this.status(ws);
@@ -279,7 +284,7 @@ export class GitUIService {
   }
 
   async pull(ws, { remote = "origin", branch, rebase = true } = {}) {
-    const r = await rpc.gitPull({ ws, remote, branch, rebase });
+    const r = await rpc.$call("gitPull", { ws, remote, branch, rebase });
     if (r?.error) throw new Error(r.error);
     await this.status(ws);
     return r.output || "";

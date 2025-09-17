@@ -5,7 +5,7 @@ import * as dbTools from "@loki/db/tools";
 import { toolRegistry } from "@loki/minihttp/util";
 toolRegistry.defineMany(dbTools);
 
-const config = { components: [] };
+const config = { components: [], tools: toolRegistry, schemas: {} };
 
 for (const load of plugins) {
   const install = await load();

@@ -3,7 +3,7 @@ import { LitElement, html, css } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { TaskController } from "../shared/TaskController.js";
 
-export class TaskList extends LitElement {
+export class TaskListComponent extends LitElement {
   static styles = css`
     :host {
       display: block;
@@ -201,4 +201,8 @@ export class TaskList extends LitElement {
 }
 
 if (!customElements.get("task-list"))
-  customElements.define("task-list", TaskList);
+  customElements.define("task-list", TaskListComponent);
+
+export const TaskList = {
+  render: (props) => html`<task-list ...=${props}></task-list>`,
+};

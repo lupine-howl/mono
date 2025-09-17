@@ -417,7 +417,7 @@ export class GithubPluggableApp extends LitElement {
 
   renderSidebarBlocks(blocks) {
     return blocks.map(
-      ({ label, render, wrapperStyle, ws, path }) => html`
+      ({ label, render, wrapperStyle, ws, path, component }) => html`
         <div class=${wrapperStyle || "card"}>
           ${label
             ? html`<h3
@@ -432,7 +432,8 @@ export class GithubPluggableApp extends LitElement {
                 ${label}
               </h3>`
             : ""}
-          ${render?.({ controllers: this.controllers }) ??
+          ${component?.render?.() ||
+          render?.() ||
           html`<div style="opacity:.7">No content.</div>`}
         </div>
       `
@@ -505,9 +506,9 @@ export class GithubPluggableApp extends LitElement {
                     ${body.label}
                   </h3>`
                 : ""}
-              ${body?.render
-                ? body.render({ controllers: this.controllers })
-                : html`<div style="opacity:.7">No content.</div>`}
+              ${body?.component?.render?.() ||
+              body?.render?.() ||
+              html`<div style="opacity:.7">No content.</div>`}
             </section>
           </div>
         </main>
@@ -519,9 +520,7 @@ export class GithubPluggableApp extends LitElement {
             <div class="composer">
               <div class="composer-inner">
                 ${this.ui.composer.map(
-                  (i) =>
-                    i.render?.({ controllers: this.controllers }) ??
-                    i.render?.()
+                  (i) => i?.component?.render?.() || i?.render?.()
                 )}
               </div>
             </div>
@@ -531,8 +530,7 @@ export class GithubPluggableApp extends LitElement {
         ? html`
             <div class="alerts" aria-label="Alerts">
               ${this.ui.alerts.map(
-                (i) =>
-                  i.render?.({ controllers: this.controllers }) ?? i.render?.()
+                (i) => i?.component?.render?.() || i?.render?.()
               )}
             </div>
           `

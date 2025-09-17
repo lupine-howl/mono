@@ -20,7 +20,6 @@
     "@loki/http-base": "../../packages/http-base",
     "@loki/personas": "../../packages/personas",
     "@loki/utilities": "../../packages/utilities",
-    "@loki/tasks": "../../packages/tasks",
     "@loki/tasksv2": "../../packages/tasksv2",
     "@loki/terminal": "../../packages/terminal",
     "@loki/self-code-test": "../../packages/self-code-test",

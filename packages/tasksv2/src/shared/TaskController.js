@@ -23,12 +23,12 @@ export class TaskController {
   select = (id) => this.store.select(id);
 
   // call tools directly by name (your goal)
-  list = () => rpc.$call("listTasks", {});
-  add = (p) => rpc.$call("createTask", p);
-  update = (id, patch) => rpc.$call("updateTask", { id, ...patch });
+  list = () => rpc.$call("tasksList", {});
+  add = (p) => rpc.$call("taskCreate", p);
+  update = (id, patch) => rpc.$call("taskUpdate", { id, ...patch });
   toggle = (id) => {
     const t = this.store.get().tasks.find((x) => x.id === id);
     if (t) return this.update(id, { done: !t.done });
   };
-  remove = (id) => rpc.$call("deleteTask", { id });
+  remove = (id) => rpc.$call("taskDelete", { id });
 }

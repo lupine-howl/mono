@@ -9,6 +9,7 @@ toolRegistry.defineMany(dbTools);
 const config = {
   schemas: {},
   regFunctions: {},
+  components: [],
 };
 createServer({
   baseDir: new URL("./public", import.meta.url).pathname,

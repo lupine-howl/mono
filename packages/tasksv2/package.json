@@ -3,14 +3,14 @@
   "type": "module",
   "exports": {
     ".": "./src/services/index.js",
-    "./plugin": {
-      "browser": "./src/plugin/plugin.client.js",
-      "node": "./src/plugin/plugin.server.mjs",
-      "default": "./src/plugin/plugin.server.mjs"
-    },
+    "./plugin": "./src/plugin.config.js",
     "./schemas/*": "./src/schemas/*",
-    "./ui/*": "./src/ui/*",
-    "./tools/*": "./src/tools/*",
+    "./ui": {
+      "browser": "./src/ui/index.js",
+      "node": "./src/ui/index.server.js",
+      "default": "./src/ui/index.js"
+    },
+    "./tools": "./src/tools/index.js",
     "./util": "./src/shared/index.js"
   },
   "scripts": {},

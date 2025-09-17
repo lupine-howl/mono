@@ -221,22 +221,7 @@ export class ToolsService extends EventTarget {
     if (!name) throw new Error("invokeRemote: missing tool name");
     return rpc.$call(name, args);
   }
-
-  // Convenience passthroughs to rpc stub registry
-  async registerStub(name, fn) {
-    rpc.registerStub(name, fn);
-  }
-  async unregisterStub(name) {
-    rpc.unregisterStub(name);
-  }
-  async clearStubs() {
-    rpc.clearStubs();
-  }
-  async hasStub(name) {
-    return rpc.hasStub(name);
-  }
 }
-
 // ---- singleton helpers ----
 export function getToolsService(opts = {}) {
   const KEY = Symbol.for("@loki/minihttp:service@minimal");
