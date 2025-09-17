@@ -1,7 +1,9 @@
 // examples/src/app.js
 import { GithubPluggableApp } from "@loki/layout/ui/GithubPluggableApp.js";
 import plugins from "./config.plugins.js";
-import { rpc } from "@loki/minihttp/util";
+import * as dbTools from "@loki/db/tools";
+import { toolRegistry } from "@loki/minihttp/util";
+toolRegistry.defineMany(dbTools);
 
 const config = { components: [] };
 

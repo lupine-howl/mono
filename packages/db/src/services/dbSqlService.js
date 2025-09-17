@@ -217,7 +217,7 @@ export function getDbSqlService(opts = {}) {
 
 // default singleton instance
 export const dbSqlService = getDbSqlService();
-
+export const db = dbSqlService;
 // ---------- convenience helpers using the default singleton -----------------
 
 export const dbInsert = (table, values, opts) =>

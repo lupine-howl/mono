@@ -1,6 +1,6 @@
 // src/shared/TaskController.js (unchanged shape)
 import { getTaskStore } from "./TaskStore.js";
-import { rpc } from "@loki/minihttp/util";
+import { toolRegistry as rpc } from "@loki/minihttp/util";
 
 export class TaskController {
   constructor(host) {

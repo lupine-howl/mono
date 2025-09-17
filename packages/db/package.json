@@ -2,7 +2,11 @@
   "name": "@loki/db",
   "type": "module",
   "exports": {
-    ".": "./src/services/index.js",
+    ".": {
+      "browser": "./src/services/index.browser.js",
+      "node": "./src/services/index.js",
+      "default": "./src/services/index.browser.js"
+    },
     "./plugin": {
       "browser": "./src/plugin/plugin.client.js",
       "node": "./src/plugin/plugin.server.mjs",
@@ -10,7 +14,8 @@
     },
     "./schemas/*": "./src/schemas/*",
     "./ui/*": "./src/ui/*",
-    "./util": "./src/shared/index.js"
+    "./util": "./src/shared/index.js",
+    "./tools": "./src/tools/index.js"
   },
   "scripts": {
     "build:ui": "esbuild src/ui/*.js                 --outdir=dist/ui       --bundle --format=esm --platform=browser --packages=external --log-level=info",

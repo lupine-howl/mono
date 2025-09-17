@@ -2,20 +2,14 @@
 import { html } from "lit";
 import "@loki/tasksv2/ui/task-list.js";
 import "@loki/tasksv2/ui/task-viewer.js";
-import { rpc } from "@loki/minihttp/util";
+import { toolRegistry } from "@loki/minihttp/util";
 import { createTask } from "@loki/tasksv2/tools/createTask.js";
 import { listTasks } from "@loki/tasksv2/tools/listTasks.js";
 import { updateTask } from "@loki/tasksv2/tools/updateTask.js";
 import { deleteTask } from "@loki/tasksv2/tools/deleteTask.js";
 
-export function registerTaskToolStubs() {
-  for (const t of [createTask, listTasks, updateTask, deleteTask]) {
-    if (typeof t?.stub === "function") rpc.registerStub(t.name, t.stub);
-  }
-}
-
 export default ({ components }) => {
-  registerTaskToolStubs();
+  toolRegistry.defineMany({ createTask, listTasks, updateTask, deleteTask });
   components.push({
     body: [
       {

@@ -1,7 +1,6 @@
 import { getGlobalSingleton } from "@loki/utilities";
 import { getEventStore } from "./EventStore.js";
 import { dbSelect, dbInsert, dbUpdate, dbDelete } from "@loki/db/util";
-import { rpc } from "@loki/minihttp/util";
 
 function toEpoch(value) {
   if (value == null) return null;
@@ -28,11 +27,6 @@ export class EventUIService {
     this.table = table;
     this.pk = "id";
     this.store = getEventStore();
-    rpc.onCall("createEvent", ({ result }) => {
-      console.log("createEvent received via RPC:", result);
-      const values = result?.values;
-      this.store.upsertOne(decodeEventRow(values));
-    });
   }
 
   async list({ calendarId } = {}) {

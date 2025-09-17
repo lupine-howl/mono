@@ -1,5 +1,5 @@
 // tooling-http-server.mjs
-import { createToolRegistry } from "./toolRegistry.js";
+import { toolRegistry } from "../shared/toolRegistry.js";
 import { MiniHttpServer } from "@loki/http-base";
 import { PassThrough } from "node:stream";
 
@@ -11,7 +11,7 @@ export class ToolingHttpServer extends MiniHttpServer {
     ...baseOpts
   } = {}) {
     super(baseOpts);
-    this.tools = createToolRegistry();
+    this.tools = toolRegistry;
     this.rpcPrefix = rpcPrefix;
     this.openApiPath = openApiPath;
     this.eventsPath = eventsPath;
@@ -60,9 +60,6 @@ export class ToolingHttpServer extends MiniHttpServer {
     this.tools.mountOpenApi(this.router, this.openApiPath, {
       prefix: this.rpcPrefix,
     });
-
-    // Wire registry -> SSE broadcast
-    this.tools.setBroadcast((evt) => this._broadcastSse(evt));
 
     return this;
   }

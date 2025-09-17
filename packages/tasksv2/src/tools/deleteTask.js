@@ -1,5 +1,5 @@
 import { getTaskStore } from "../shared/TaskStore.js";
-import { rpc } from "@loki/minihttp/util";
+import { toolRegistry as rpc } from "@loki/minihttp/util";
 
 export const deleteTask = {
   name: "deleteTask",
@@ -16,7 +16,7 @@ export const deleteTask = {
     const snapshot = store.get().tasks;
     store.removeOne(id, "local:remove");
     try {
-      await rpcArg.$callRemote("deleteTask", { id });
+      //await rpcArg.$call("deleteTask", { id });
       return { ok: true };
     } catch (e) {
       store.revertRemove(snapshot, id);

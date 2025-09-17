@@ -1,7 +1,7 @@
 // src/tools/createTask.js
 import tasksSchema from "../schemas/tasks.schema.js"; // default export is fine
 import { getTaskStore } from "../shared/TaskStore.js";
-import { rpc } from "@loki/minihttp/util";
+import { toolRegistry as rpc } from "@loki/minihttp/util";
 
 // Small normaliser to ensure timestamps and ids exist.
 // (Server will still persist/override as needed.)
@@ -38,7 +38,7 @@ export const createTask = {
 
     try {
       // Call the server tool
-      const { item: serverItem } = await rpc.$callRemote("createTask", local);
+      //const { item: serverItem } = await rpc.$call("createTask", local);
 
       if (!serverItem || !serverItem.id) {
         throw new Error("createTask: server returned no item");

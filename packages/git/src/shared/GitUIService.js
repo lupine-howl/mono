@@ -1,5 +1,5 @@
 import { getGlobalSingleton } from "@loki/utilities";
-import { rpc } from "@loki/minihttp/util";
+import { toolRegistry as rpc } from "@loki/minihttp/util";
 import { getGitStore } from "./GitStore.js";
 import { aiChatService } from "@loki/ai-chat/util";
 
@@ -12,59 +12,6 @@ import { aiChatService } from "@loki/ai-chat/util";
 export class GitUIService {
   constructor() {
     this.store = getGitStore();
-
-    // ---- External calls (from other tabs/clients) → keep store in sync ----
-    rpc.onCall("gitStatus", ({ args, result }) => {
-      if (result && (args?.ws || this.store.get().ws)) {
-        this.store.setStatus(args?.ws, result);
-      }
-    });
-
-    rpc.onCall("gitBranchList", ({ result }) => {
-      if (Array.isArray(result?.items)) this.store.setBranches(result.items);
-    });
-
-    rpc.onCall("gitLog", ({ result }) => {
-      if (Array.isArray(result?.items)) this.store.setLog(result.items);
-    });
-
-    rpc.onCall("gitDiff", ({ args, result }) => {
-      if (typeof result?.diff === "string") {
-        this.store.setDiff({
-          text: result.diff,
-          path: args?.path,
-          cached: !!args?.cached,
-          commit: args?.commit,
-        });
-      }
-    });
-
-    // Back-compat: if something else calls the old generator tool, still sync the draft.
-    rpc.onCall("gitGenerateCommit", ({ args, result }) => {
-      if (result?.subject)
-        this.store.setCommitDraft(result.subject, result.body || "", {
-          ws: args?.ws,
-          source: result.source,
-        });
-    });
-
-    // For mutating ops, heuristically refresh status when called elsewhere
-    for (const name of [
-      "gitAdd",
-      "gitRestore",
-      "gitCommit",
-      "gitCheckout",
-      "gitPush",
-      "gitPull",
-    ]) {
-      rpc.onCall(name, async ({ args, result }) => {
-        if (result?.ok && args?.ws) {
-          try {
-            await this.status(args.ws);
-          } catch {}
-        }
-      });
-    }
   }
 
   // ---- Queries ----
@@ -83,14 +30,14 @@ export class GitUIService {
   }
 
   async log(ws, { max = 50 } = {}) {
-    const res = await rpc.gitLog({ ws, max });
+    const res = await rpc.$call("gitLog", { ws, max });
     if (res?.error) throw new Error(res.error);
     this.store.setLog(res.items || []);
     return res.items || [];
   }
 
   async diff(ws, { path, cached = false, commit } = {}) {
-    const res = await rpc.gitDiff({ ws, path, cached, commit });
+    const res = await rpc.$call("gitDiff", { ws, path, cached, commit });
     if (res?.error) throw new Error(res.error);
     this.store.setDiff({ text: res.diff || "", path, cached, commit });
     return res.diff || "";
@@ -200,7 +147,11 @@ export class GitUIService {
     for (const p of files) cat[classify(p)]++;
 
     // context markdown
-    const header = `Repo status:\n- branch: ${branch || "(unknown)"}  (+${ahead}/-${behind})\n- prefer: ${preferStaged ? "staged" : "unstaged"}\n- totals by type: ${
+    const header = `Repo status:\n- branch: ${
+      branch || "(unknown)"
+    }  (+${ahead}/-${behind})\n- prefer: ${
+      preferStaged ? "staged" : "unstaged"
+    }\n- totals by type: ${
       Object.entries(cat)
         .filter(([, n]) => n > 0)
         .map(([k, n]) => `${k}:${n}`)

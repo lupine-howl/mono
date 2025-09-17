@@ -1,6 +1,6 @@
 import schema from "../schemas/tasks.schema.js";
 import { getTaskStore } from "../shared/TaskStore.js";
-import { rpc } from "@loki/minihttp/util";
+import { toolRegistry as rpc } from "@loki/minihttp/util";
 
 export const updateTask = {
   name: "updateTask",
@@ -22,11 +22,11 @@ export const updateTask = {
     // optimistic
     const changed = store.applyLocalUpdate(id, patch);
     try {
-      const { item } = await rpcArg.$callRemote("updateTask", { id, ...patch });
+      //const { item } = await rpcArg.$call("updateTask", { id, ...patch });
       if (item?.id) store.upsertOne(item, "server:update");
       return { item };
     } catch (e) {
-      if (changed) await rpcArg.$callRemote("listTasks", {}); // cheap reconcile
+      //if (changed) await rpcArg.$call("listTasks", {}); // cheap reconcile
       store.setError(e, { op: "updateTask", id });
       throw e;
     }

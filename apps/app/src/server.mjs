@@ -1,9 +1,10 @@
 // src/server.mjs
 import { createServer } from "@loki/minihttp";
-import { registerDbTools } from "@loki/db";
-import path from "node:path";
-
+import { db } from "@loki/db";
 import plugins from "./config.plugins.js";
+import * as dbTools from "@loki/db/tools";
+import { toolRegistry } from "@loki/minihttp";
+toolRegistry.defineMany(dbTools);
 
 const config = {
   schemas: {},
@@ -16,10 +17,9 @@ createServer({
       const install = await load();
       if (install) await install?.({ ...config, tools, router });
     }
-    registerDbTools(tools, {
-      dbPath: path.resolve(process.cwd(), "data", "app.db"),
-      schemas: config.schemas,
-    });
+    for (const [table, schema] of Object.entries(config.schemas || {})) {
+      db.ensureTableFromJsonSchema(table, schema);
+    }
     //console.log(config);
     for (const [key, fn] of Object.entries(config.regFunctions)) {
       fn({ tools, router });

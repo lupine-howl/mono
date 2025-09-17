@@ -1,76 +1,40 @@
 // src/shared/ToolsService.js
-// (drop-in replacement)
+// Minimal, drop-in compatible
 
 import { getGlobalSingleton } from "@loki/utilities";
-import { createOpenApiRpcClient } from "./createOpenApiRpcClient.js";
+import { toolRegistry as rpc } from "./toolRegistry.js";
 
 const isBrowser = () =>
   typeof window !== "undefined" && typeof localStorage !== "undefined";
 
-/**
- * Emits a single "change" event with detail:
- * { type, base, src, openapiUrl, method, tools, toolName, tool, schema, values,
- *   loadingTools, calling, result, error }
- */
 export class ToolsService extends EventTarget {
-  constructor({
-    storageKey = "minihttp.selectedTool",
-    base = isBrowser() ? location.origin : "http://localhost:3000",
-    src = "/rpc",
-    openapiUrl = "/openapi.json",
-    method = "POST",
-
-    // NEW: initial selection to seed forms for scoped/embedded viewers
-    initialTool = "",
-    initialArgs = null,
-    initialMethod = null, // "GET" | "POST"
-    preferInitial = true, // if true, initialTool wins over localStorage on first load
-  } = {}) {
+  constructor({ storageKey = "minihttp.selectedTool", src = "/rpc" } = {}) {
     super();
     this.storageKey = storageKey;
-    this.base = base;
     this.src = src;
-    this.openapiUrl = openapiUrl;
 
     // state
-    this.tools = []; // [{name, description?, parameters?}]
-    this.toolName = ""; // active tool name
-    this.tool = null; // active tool object
+    this.tools = []; // [{ name, description?, parameters? }]
+    this.toolName = ""; // selected tool name
+    this.tool = null; // selected tool object
     this.schema = null; // JSON schema for args
     this.values = {}; // current args
-    this.method = (method || "POST").toUpperCase();
-
-    this.loadingTools = false;
     this.calling = false;
     this.result = null;
     this.error = null;
 
-    this._rpc = null;
     this._ready = null;
-
-    // NEW: remember initial selection
-    this._init = {
-      tool: initialTool || "",
-      args: initialArgs,
-      method: initialMethod ? String(initialMethod).toUpperCase() : null,
-      prefer: !!preferInitial,
-      applied: false,
-    };
   }
 
-  // -------- public state helpers --------
+  // ---------- basic state ----------
   get() {
     return {
-      base: this.base,
       src: this.src,
-      openapiUrl: this.openapiUrl,
-      method: this.method,
       tools: this.tools,
       toolName: this.toolName,
       tool: this.tool,
       schema: this.schema,
       values: this.values,
-      loadingTools: this.loadingTools,
       calling: this.calling,
       result: this.result,
       error: this.error,
@@ -81,73 +45,38 @@ export class ToolsService extends EventTarget {
     this.addEventListener("change", h);
     return () => this.removeEventListener("change", h);
   }
+  _emit(type, extra = {}) {
+    this.dispatchEvent(
+      new CustomEvent("change", { detail: { type, ...this.get(), ...extra } })
+    );
+  }
 
-  // -------- lifecycle / hydrate --------
+  // ---------- tools list ----------
   async sync() {
-    if (!this._ready) {
-      const lsPreferred = isBrowser()
-        ? localStorage.getItem(this.storageKey) || ""
-        : "";
-      const preferred =
-        this._init.prefer && this._init.tool ? this._init.tool : lsPreferred;
-
-      this._ready = this.refreshTools({ preferred })
-        .then(() => {
-          this._emit("init");
-        })
-        .catch((e) => {
-          this._emit("error", { error: String(e?.message || e) });
-        });
-    }
+    if (!this._ready) this._ready = this.refreshTools();
     return this._ready;
   }
 
-  // -------- events --------
-  _emit(type, extra = {}) {
-    const detail = {
-      type,
-      base: this.base,
-      src: this.src,
-      openapiUrl: this.openapiUrl,
-      method: this.method,
-      tools: this.tools,
-      toolName: this.toolName,
-      tool: this.tool,
-      schema: this.schema,
-      values: this.values,
-      loadingTools: this.loadingTools,
-      calling: this.calling,
-      result: this.result,
-      error: this.error,
-      ...extra,
-    };
-    this.dispatchEvent(new CustomEvent("change", { detail }));
-  }
-
-  // -------- tools list --------
-  async refreshTools({ preferred = "" } = {}) {
-    this.loadingTools = true;
+  async refreshTools() {
     this.error = null;
     this._emit("tools:loading");
     try {
+      // try /rpc/tools (structured); else fallback to /rpc (names)
       let tools = await this._fetchToolsList(`${this.src}/tools`);
       if (!tools) tools = await this._fetchNamesList(this.src);
       this.tools = this._normalizeTools(tools);
 
-      const exists = preferred && this.tools.some((t) => t.name === preferred);
-      const next = exists ? preferred : this.tools[0]?.name || "";
-      await this.setTool(next, { fromRefresh: true });
-
-      // Apply initial method/args once (after schema/defaults exist)
-      if (!this._init.applied) {
-        if (this._init.method) this.setMethod(this._init.method);
-        if (this._init.args && next) this.setValues(this._init.args);
-        this._init.applied = true;
-      }
-
+      const stored = isBrowser()
+        ? localStorage.getItem(this.storageKey) || ""
+        : "";
+      const choice =
+        (stored && this.tools.find((t) => t.name === stored)?.name) ||
+        this.tools[0]?.name ||
+        "";
+      await this.setTool(choice || "");
       this._emit("tools");
     } catch (e) {
-      this.error = e?.message || String(e);
+      this.error = String(e?.message || e);
       this.tools = [];
       this.toolName = "";
       this.tool = null;
@@ -155,7 +84,6 @@ export class ToolsService extends EventTarget {
       this.values = {};
       this._emit("error", { error: this.error });
     } finally {
-      this.loadingTools = false;
       this._emit("tools:loaded");
     }
   }
@@ -180,7 +108,6 @@ export class ToolsService extends EventTarget {
       return null;
     }
   }
-
   async _fetchNamesList(url) {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -188,7 +115,6 @@ export class ToolsService extends EventTarget {
     const names = Array.isArray(j?.tools) ? j.tools : [];
     return names.map((n) => ({ name: String(n) }));
   }
-
   _normalizeTools(list) {
     const out = [];
     const seen = new Set();
@@ -206,10 +132,10 @@ export class ToolsService extends EventTarget {
     return out;
   }
 
-  // -------- selection / args --------
-  async setTool(name, { fromRefresh = false } = {}) {
+  // ---------- selection & args ----------
+  async setTool(name) {
     if (!name || name === this.toolName) {
-      if (fromRefresh) this._emit("select");
+      this._emit("select");
       return;
     }
     this.toolName = name;
@@ -220,11 +146,6 @@ export class ToolsService extends EventTarget {
     this.result = null;
     this.error = null;
     this._emit("select");
-  }
-
-  setMethod(method = "POST") {
-    this.method = (method || "POST").toUpperCase();
-    this._emit("method");
   }
 
   setValues(next = {}) {
@@ -242,11 +163,10 @@ export class ToolsService extends EventTarget {
     this._emit("result:clear");
   }
 
-  _defaultValues(schema, prev = {}) {
+  _defaultValues(schema) {
     const props = schema?.properties || {};
-    const out = { ...(prev || {}) };
+    const out = {};
     for (const [k, v] of Object.entries(props)) {
-      if (out[k] !== undefined) continue;
       if (v.default !== undefined) out[k] = v.default;
       else if (v.type === "boolean") out[k] = false;
       else out[k] = "";
@@ -254,33 +174,20 @@ export class ToolsService extends EventTarget {
     return out;
   }
 
-  // -------- RPC calls --------
-  async _ensureRpc() {
-    if (!this._rpc) {
-      this._rpc = createOpenApiRpcClient({
-        base: this.base,
-        openapiUrl: this.openapiUrl,
-      });
-    }
-    return this._rpc;
-  }
-
-  /** Uses the currently-selected tool + values; updates `result` in state. */
+  // ---------- calls ----------
+  /** Uses currently selected tool + values; stores result/error. */
   async call() {
     if (!this.toolName) return;
-    await this._ensureRpc();
     this.calling = true;
     this.result = null;
     this.error = null;
     this._emit("call:start");
     try {
-      const body = await this._rpc[this.toolName](this.values, {
-        method: this.method,
-      });
+      const body = await rpc.$call(this.toolName, this.values);
       this.result = body;
       this._emit("result", { ok: true });
     } catch (e) {
-      this.error = e?.message || String(e);
+      this.error = String(e?.message || e);
       this._emit("result", { ok: false });
     } finally {
       this.calling = false;
@@ -288,19 +195,13 @@ export class ToolsService extends EventTarget {
     }
   }
 
-  /**
-   * One-off execution of an arbitrary tool with explicit args.
-   * Does NOT mutate selection/values/result; does toggle `calling` while in-flight.
-   */
-  async invoke(name, args, { method } = {}) {
+  /** One-off execution; does not mutate selection/result. */
+  async invoke(name, args = {}) {
     if (!name) throw new Error("invoke: missing tool name");
-    await this._ensureRpc();
     this.calling = true;
     this._emit("call:start", { invoked: name });
     try {
-      const body = await this._rpc[name](args ?? {}, {
-        method: (method || this.method || "POST").toUpperCase(),
-      });
+      const body = await rpc.$call(name, args);
       this._emit("invoke:result", { ok: true });
       return body;
     } catch (e) {
@@ -315,35 +216,30 @@ export class ToolsService extends EventTarget {
     }
   }
 
-  // NEW: set/refresh the initial selection at runtime (e.g., when attributes change)
-  setInitialSelection({ tool, args, method, prefer = true } = {}) {
-    this._init = {
-      tool: tool || "",
-      args: args ?? null,
-      method: method ? String(method).toUpperCase() : null,
-      prefer: !!prefer,
-      applied: false,
-    };
-    // If tools are already loaded, apply immediately
-    if (this.tools?.length) {
-      const exists =
-        this._init.tool && this.tools.some((t) => t.name === this._init.tool);
-      const next = exists
-        ? this._init.tool
-        : this.toolName || this.tools[0]?.name || "";
-      if (next && next !== this.toolName) {
-        this.setTool(next);
-      }
-      if (this._init.method) this.setMethod(this._init.method);
-      if (this._init.args) this.setValues(this._init.args);
-      this._init.applied = true;
-    }
+  /** Remote-only execution bypassing stubs. */
+  async invokeRemote(name, args = {}) {
+    if (!name) throw new Error("invokeRemote: missing tool name");
+    return rpc.$call(name, args);
+  }
+
+  // Convenience passthroughs to rpc stub registry
+  async registerStub(name, fn) {
+    rpc.registerStub(name, fn);
+  }
+  async unregisterStub(name) {
+    rpc.unregisterStub(name);
+  }
+  async clearStubs() {
+    rpc.clearStubs();
+  }
+  async hasStub(name) {
+    return rpc.hasStub(name);
   }
 }
 
 // ---- singleton helpers ----
 export function getToolsService(opts = {}) {
-  const KEY = Symbol.for("@loki/minihttp:service@1");
+  const KEY = Symbol.for("@loki/minihttp:service@minimal");
   return getGlobalSingleton(KEY, () => new ToolsService(opts));
 }
 export const toolsService = getToolsService();

@@ -1,24 +1,18 @@
-import schema from "../schemas/tasks.schema.js";
-import { getTaskStore } from "../shared/TaskStore.js";
-import { rpc } from "@loki/minihttp/util";
+import { taskStore } from "../shared/TaskStore.js";
 
 export const listTasks = {
   name: "listTasks",
   description: "List tasks",
   parameters: { type: "object", properties: {}, additionalProperties: false },
 
-  async stub(_, { store = getTaskStore(), rpc: rpcArg = rpc } = {}) {
-    const { items = [] } = await rpcArg.$callRemote("listTasks", {});
-    store.replaceAll(items);
-    return { items };
+  async stub(_, { result }) {
+    if (result && result.items) {
+      taskStore.replaceAll(result.items);
+    }
+    return { items: result?.items };
   },
 
-  async handler(
-    _,
-    {
-      /* db */
-    } = {}
-  ) {
+  async handler() {
     const { dbSelect } = await import("@loki/db/util");
     const { items } = await dbSelect({
       table: "tasks",
