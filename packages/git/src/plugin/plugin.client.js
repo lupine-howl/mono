@@ -6,8 +6,10 @@ import "../ui/git-staged.js";
 import "../ui/git-commit.js";
 import "../ui/git-history.js";
 import "../ui/git-sync.js";
+import * as gitTools from "@loki/git/tools";
 
-export default ({ components }) => {
+export default ({ components, tools }) => {
+  tools.defineMany(gitTools);
   const ns = "git";
   components.push({
     body: [
@@ -53,8 +55,8 @@ export default ({ components }) => {
             id: `file-browser`,
             label: "📁 Files",
             order: 30,
-            ws:"packages/file-browser",
-            path:"src/ui/file-browser.js",
+            ws: "packages/file-browser",
+            path: "src/ui/file-browser.js",
             render: () => html`<file-browser></file-browser>`,
           },
           {

@@ -144,7 +144,7 @@ export function mountChatRoute(
       } = args || {};
 
       // Build tools and inject friendly meta schema
-      const baseTools = toOpenAIToolsFromRegistry(registry);
+      const baseTools = await toOpenAIToolsFromRegistry(registry);
       const toolsWithMeta = injectFriendlyMeta(baseTools);
 
       // Build messages and append the meta system nudge

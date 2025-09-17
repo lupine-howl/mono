@@ -1,4 +1,4 @@
-import { runGit, getCwd, GIT_DEFAULTS } from "./helpers.js";
+import { runGit, getCwd, GIT_DEFAULTS } from "@loki/git/helpers";
 
 export const gitDiff = {
   name: "gitDiff",

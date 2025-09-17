@@ -1,7 +1,5 @@
-import { loadToolsFromDir } from "@loki/minihttp";
+import * as gitTools from "@loki/git/tools";
 
 export default async ({ tools }) => {
-  const toolsDirUrl = new URL("../tools/", import.meta.url);
-  const toolDefs = await loadToolsFromDir(toolsDirUrl);
-  tools.defineMany(toolDefs);
+  tools.defineMany(gitTools);
 };

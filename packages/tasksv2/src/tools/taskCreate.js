@@ -17,6 +17,20 @@ export const taskCreate = {
   name: "taskCreate",
   description: "Create a new task",
   parameters: { ...tasksSchema, additionalProperties: false },
+  returns: {
+    type: "object",
+    properties: {
+      ok: {
+        type: "boolean",
+        description: "Whether the operation was successful",
+      },
+      data: {
+        type: "object",
+        description: "The created task",
+        properties: { item: { type: "object" } },
+      },
+    },
+  },
 
   async stub(values, { result }) {
     // optimistic: if server already responded, prefer that; else stage a local
@@ -75,12 +89,15 @@ export const taskCreateThenCreateImage = {
             to: `${slugify(title)}.png`,
           };
         },
-        output: (ctx) => ({
-          kind: "image",
-          ws: "images",
-          path: ctx?.download?.data?.to,
-          mime: ctx?.image?.mime,
-        }),
+        output: (ctx, lastResult) => {
+          console.log(ctx, lastResult);
+          return {
+            kind: "image",
+            ws: "images",
+            path: ctx?.download?.path,
+            mime: ctx?.image?.mime,
+          };
+        },
       },
     ];
   },

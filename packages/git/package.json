@@ -14,9 +14,14 @@
       "node": "./src/plugin/plugin.server.mjs",
       "default": "./src/plugin/plugin.server.mjs"
     },
+    "./helpers": {
+      "browser": "./src/tools/helpers.shim.js",
+      "node": "./src/tools/helpers.js",
+      "default": "./src/tools/helpers.shim.js"
+    },
     "./schemas/*": "./src/schemas/*",
     "./ui/*": "./src/ui/*",
-    "./tools/*": "./src/tools/*",
+    "./tools": "./src/tools/index.js",
     "./util": "./src/shared/index.js"
   },
   "scripts": {

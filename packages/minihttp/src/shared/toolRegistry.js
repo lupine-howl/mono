@@ -1,7 +1,8 @@
-// isomorphic-tool-registry.js
+// src/registry/isomorphic-tool-registry.js
 import { getGlobalSingleton } from "@loki/utilities";
+import { validate } from "./validation.js";
+import { isPlanTool, makePlan, runPlan } from "./plan-runner.js";
 
-const PRIMS = new Set(["string", "number", "integer", "boolean", "null"]);
 const isBrowser = () => typeof window !== "undefined";
 
 export function createToolRegistry({
@@ -11,37 +12,44 @@ export function createToolRegistry({
 } = {}) {
   const tools = new Map();
 
+  // ---- parameters resolver (object or (async) function, optional ctx) ----
+  async function resolveParameters(t, ctx) {
+    let p = t?.parameters;
+    if (typeof p === "function") {
+      // If the function accepts an argument, pass ctx; otherwise call with no args
+      p = p.length > 0 ? await p(ctx) : await p();
+    }
+    return p || { type: "object", properties: {} };
+  }
+
   // ---------- define ----------
   function define(spec) {
     const {
       name,
       description = "",
-      parameters = null,
+      parameters = null, // object or (async) (ctx)=>object
       handler,
       stub = null,
+      beforeRun = null,
+      afterRun = null,
+      runServer = null,
       safe = false,
       tags = [],
-      // plan support
       plan = null, // (args, ctx) => Step[]
-      steps = null, // Step[]
-      chain = null, // function | Step[] (legacy)
-      output = null, // async (ctx, lastResult) => any (tool-level finaliser)
+      output = null, // async (ctx, lastResult) => any
     } = spec || {};
     if (!name) throw new Error("Tool name required");
 
     const hasExec =
       typeof handler === "function" ||
       typeof stub === "function" ||
-      typeof plan === "function" ||
-      Array.isArray(steps) ||
-      typeof chain === "function" ||
-      Array.isArray(chain);
+      typeof beforeRun === "function" ||
+      typeof afterRun === "function" ||
+      typeof runServer === "function" ||
+      typeof plan === "function";
 
-    if (!hasExec) {
-      throw new Error(
-        `Tool "${name}" requires a handler/stub or a plan/steps/chain`
-      );
-    }
+    if (!hasExec)
+      throw new Error(`Tool "${name}" requires a handler/stub or a plan`);
     if (tools.has(name)) throw new Error(`Tool already defined: ${name}`);
 
     tools.set(name, {
@@ -50,11 +58,12 @@ export function createToolRegistry({
       parameters,
       handler,
       stub,
+      beforeRun,
+      afterRun,
+      runServer,
       safe,
       tags,
       plan,
-      steps,
-      chain,
       output,
     });
     return name;
@@ -67,169 +76,6 @@ export function createToolRegistry({
     return Object.entries(dict).map(([name, spec]) =>
       define({ name, ...(spec || {}) })
     );
-  }
-
-  // ---------- validation ----------
-  function validate(schema, source) {
-    if (!schema || schema.type !== "object")
-      return { ok: true, value: source || {} };
-
-    const props = schema.properties || {};
-    const req = new Set(schema.required || []);
-    const out = {};
-
-    for (const key of Object.keys(props)) {
-      const def = props[key] || {};
-      let v = source?.[key];
-
-      if (v === undefined) {
-        if (req.has(key))
-          return { ok: false, error: `Missing required: ${key}` };
-        continue;
-      }
-
-      // Coerce common query-string-ish values
-      if (typeof v === "string") {
-        if (def.type === "number" || def.type === "integer") {
-          const n = Number(v);
-          if (Number.isNaN(n))
-            return { ok: false, error: `Invalid number: ${key}` };
-          v = n;
-        } else if (def.type === "boolean") {
-          const s = v.toLowerCase();
-          if (s === "true" || s === "1") v = true;
-          else if (s === "false" || s === "0") v = false;
-        } else if (
-          (def.type === "object" || def.type === "array") &&
-          /^[{\[]/.test(v.trim())
-        ) {
-          try {
-            v = JSON.parse(v);
-          } catch {}
-        }
-      }
-
-      // Union with null: type: ["string","null"]
-      if (Array.isArray(def.type)) {
-        const allowsNull = def.type.includes("null");
-        if (v === null && allowsNull) {
-          out[key] = v;
-          continue;
-        }
-        const primary = def.type.find((t) => t !== "null") || def.type[0];
-        if (!checkPrim(primary, v))
-          return { ok: false, error: `Expected ${primary}: ${key}` };
-        out[key] = v;
-        continue;
-      }
-
-      if (PRIMS.has(def.type)) {
-        if (!checkPrim(def.type, v))
-          return { ok: false, error: `Expected ${def.type}: ${key}` };
-      }
-      out[key] = v;
-    }
-    return { ok: true, value: out };
-  }
-
-  function checkPrim(type, v) {
-    if (type === "null") return v === null;
-    if (type === "integer") return Number.isInteger(v);
-    if (type === "number") return typeof v === "number" && Number.isFinite(v);
-    if (type === "boolean") return typeof v === "boolean";
-    if (type === "string") return typeof v === "string";
-    return true; // object/array/etc. not deeply validated here
-  }
-
-  // ---------- plan runner helpers ----------
-  function isPlanTool(t) {
-    return !!(t?.plan || t?.steps || t?.chain);
-  }
-
-  // Normalise a tool's plan into Step[]
-  function makePlan(t, args, ctx) {
-    if (typeof t?.plan === "function") return t.plan(args, ctx) || [];
-    if (Array.isArray(t?.steps)) return t.steps;
-    if (typeof t?.chain === "function") return t.chain(args, ctx) || [];
-    if (Array.isArray(t?.chain)) return t.chain;
-    return [];
-  }
-
-  /**
-   * Resolve args for a step from the following (in priority order):
-   *  1) step.input (object | (ctx, initialArgs) => object)
-   *  2) step.with   (object | (ctx, initialArgs) => object)  // alias
-   *  3) step.args   (static object)
-   *  4) step.argTransform(prevResult, ctx, initialArgs)      // legacy
-   */
-  function resolveStepArgs(step, ctx, lastResult, initialArgs) {
-    if ("input" in (step || {})) {
-      return typeof step.input === "function"
-        ? step.input(ctx, initialArgs)
-        : step.input || {};
-    }
-    if ("with" in (step || {})) {
-      return typeof step.with === "function"
-        ? step.with(ctx, initialArgs)
-        : step.with || {};
-    }
-    if (step?.args) return step.args;
-    if (typeof step?.argTransform === "function") {
-      return step.argTransform(lastResult, ctx, initialArgs) || {};
-    }
-    return {};
-  }
-
-  /**
-   * Execute a plan locally. Final return precedence (all awaited):
-   *   1) toolSpec.output(ctx, lastResult)
-   *   2) lastStep.output(ctx, lastResult)
-   *   3) lastResult
-   * If you need the full context, put it inside your own return shape.
-   */
-  async function runPlan(
-    registry,
-    steps,
-    { initialArgs = {}, ctx = {}, parentTool = "", toolSpec = null } = {}
-  ) {
-    const outCtx = { ...ctx, $input: initialArgs, $results: [] };
-    let last = null;
-
-    for (const step of steps || []) {
-      const toolName = step?.tool;
-      if (!toolName || typeof toolName !== "string") {
-        throw new Error(`Invalid plan step in "${parentTool}": missing "tool"`);
-      }
-
-      const stepArgs = resolveStepArgs(step, outCtx, last, initialArgs);
-      const stepCtx = { ...outCtx, step, planParent: parentTool };
-
-      const res = await registry.callLocal(toolName, stepArgs, stepCtx);
-
-      if (step?.label) outCtx[step.label] = res;
-      outCtx.$results.push({ tool: toolName, label: step?.label, result: res });
-      last = res;
-
-      if (res && typeof res === "object" && "ok" in res && !res.ok) {
-        const msg = res.error || `Step "${toolName}" failed`;
-        const e = new Error(msg);
-        e.step = step;
-        e.result = res;
-        throw e;
-      }
-    }
-
-    // Decide the final value (allow async)
-    const lastStep = steps?.[steps.length - 1];
-    let finalVal = last;
-
-    if (toolSpec?.output && typeof toolSpec.output === "function") {
-      finalVal = await toolSpec.output(outCtx, last);
-    } else if (lastStep?.output && typeof lastStep.output === "function") {
-      finalVal = await lastStep.output(outCtx, last);
-    }
-
-    return finalVal ?? outCtx;
   }
 
   // ---------- callLocal ----------
@@ -245,6 +91,11 @@ export function createToolRegistry({
 
     // Plan tools
     if (isPlanTool(t)) {
+      // (Optionally validate plan args too — uncomment next 3 lines if desired)
+      // const schema = await resolveParameters(t, ctx);
+      // const vv = validate(schema, args || {});
+      // if (!vv.ok) throw new Error(vv.error);
+
       const plan = makePlan(t, args, ctx);
       const final = await runPlan(api, plan, {
         initialArgs: args,
@@ -255,24 +106,32 @@ export function createToolRegistry({
       return final;
     }
 
-    // Single-step tools
-    const { parameters, stub, handler } = t;
-    const v = validate(parameters, args);
+    // Single-step tools (validate against resolved schema)
+    const schema = await resolveParameters(t, ctx);
+    let { stub, handler, beforeRun, afterRun, runServer } = t;
+    afterRun = afterRun || stub || null;
+    runServer = runServer || handler || null;
+    const v = validate(schema, args);
     if (!v.ok) throw new Error(v.error);
 
     if (isBrowser()) {
-      if (typeof handler === "function") {
-        return callRemote(name, v.value, ctx).then((result) => {
-          if (typeof stub === "function")
-            return stub(v.value, { ...ctx, result });
+      let runArgs = v.value;
+      if (typeof beforeRun === "function") {
+        const mod = await beforeRun(v.value, ctx);
+        if (mod && typeof mod === "object") runArgs = mod;
+      }
+      if (typeof runServer === "function") {
+        return callRemote(name, runArgs, ctx).then((result) => {
+          if (typeof afterRun === "function")
+            return afterRun(runArgs, { ...ctx, result });
           return result;
         });
+      } else if (typeof afterRun === "function") {
+        return afterRun(runArgs, ctx);
       }
-      if (typeof stub === "function") return stub(v.value, ctx);
-    } else if (typeof handler === "function") {
-      return handler(v.value, ctx);
+    } else if (typeof runServer === "function") {
+      return runServer(v.value, ctx);
     }
-    // No viable path -> undefined (same as original semantics)
   }
 
   // ---------- callRemote ----------
@@ -281,21 +140,15 @@ export function createToolRegistry({
       throw new Error("Remote calls not supported in this environment");
     }
 
-    const known = tools.get(name) || null;
-    const safe = !!known?.safe;
-
     const base = (serverUrl || "/").replace(/\/+$/, "");
     const url = new URL(`${base}/rpc/${name}`);
 
-    // Keep original behavior: always POST JSON
+    // Always POST JSON
     const init = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args || {}),
     };
-
-    // If you later want GET for safe tools:
-    // if (safe) { init.method = "GET"; init.headers = {}; for (const [k, v] of Object.entries(args || {})) { if (v != null) url.searchParams.set(k, String(v)); } delete init.body; }
 
     const res = await fetch(url.toString(), init);
     const txt = await res.text();
@@ -309,15 +162,21 @@ export function createToolRegistry({
     return json;
   }
 
-  // ---------- server attach / OpenAPI ----------
+  // ---------- server attach / OpenAI / OpenAPI ----------
   function attach(router, { prefix = "/rpc" } = {}) {
     router.get(prefix, () => ({ tools: Array.from(tools.keys()) }));
-    router.get(`${prefix}/tools`, () => ({ tools: toOpenAITools() }));
+
+    // tools listing (OpenAI tools) must be async now
+    router.get(`${prefix}/tools`, async (_args, ctx) => ({
+      tools: await toOpenAITools(ctx),
+    }));
 
     for (const t of tools.values()) {
       const url = `${prefix}/${t.name}`;
+
       router.post(url, async (args, ctx) => {
-        const v = validate(t.parameters, args || {});
+        const schema = await resolveParameters(t, ctx);
+        const v = validate(schema, args || {});
         if (!v.ok) return { status: 400, json: { error: v.error } };
 
         if (isPlanTool(t)) {
@@ -338,13 +197,17 @@ export function createToolRegistry({
           }
         }
 
-        const result = await (t.handler || t.stub)(v.value, ctx);
+        const result = await (t.handler || t.stub || t.runServer || t.afterRun)(
+          v.value,
+          ctx
+        );
         return { status: 200, json: result ?? {} };
       });
 
       if (t.safe) {
         router.get(url, async (args, ctx) => {
-          const v = validate(t.parameters, args || {});
+          const schema = await resolveParameters(t, ctx);
+          const v = validate(schema, args || {});
           if (!v.ok) return { status: 400, json: { error: v.error } };
 
           if (isPlanTool(t)) {
@@ -372,18 +235,26 @@ export function createToolRegistry({
     }
   }
 
-  function toOpenAITools() {
-    return list().map((t) => ({
-      type: "function",
-      function: {
-        name: t.name,
-        description: t.description || "",
-        parameters: t.parameters || { type: "object", properties: {} },
-      },
-    }));
+  // now async — returns Promise<OpenAI.Tool[]>
+  async function toOpenAITools(ctx = {}) {
+    const specs = await Promise.all(
+      list().map(async (t) => {
+        const parameters = await resolveParameters(t, ctx);
+        return {
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description || "",
+            parameters,
+          },
+        };
+      })
+    );
+    return specs;
   }
 
-  function toOpenApi({ prefix = "/rpc" } = {}) {
+  // now async — resolves parameter schemas for OpenAPI too
+  async function toOpenApi({ prefix = "/rpc" } = {}) {
     const paths = {};
     for (const t of tools.values()) {
       const p = `${prefix}/${t.name}`;
@@ -394,21 +265,25 @@ export function createToolRegistry({
         responses: { 200: { description: "OK" } },
       };
       paths[p] ||= {};
+
+      const paramSchema = await resolveParameters(t);
+
       paths[p].post = {
         ...base,
-        requestBody: t.parameters
+        requestBody: paramSchema
           ? {
               required: true,
-              content: { "application/json": { schema: t.parameters } },
+              content: { "application/json": { schema: paramSchema } },
             }
           : undefined,
       };
+
       if (t.safe) {
-        const params = t.parameters?.properties
-          ? Object.entries(t.parameters.properties).map(([name, schema]) => ({
+        const params = paramSchema?.properties
+          ? Object.entries(paramSchema.properties).map(([name, schema]) => ({
               name,
               in: "query",
-              required: (t.parameters.required || []).includes(name),
+              required: (paramSchema.required || []).includes(name),
               schema,
             }))
           : undefined;
@@ -428,7 +303,10 @@ export function createToolRegistry({
     path = "/openapi.json",
     { prefix = "/rpc" } = {}
   ) {
-    router.get(path, () => ({ status: 200, json: toOpenApi({ prefix }) }));
+    router.get(path, async () => ({
+      status: 200,
+      json: await toOpenApi({ prefix }),
+    }));
   }
 
   // ---------- misc ----------
@@ -444,14 +322,14 @@ export function createToolRegistry({
     defineMany,
     list,
     find,
-    validate,
     callLocal,
     $call: callLocal,
     attach,
-    toOpenAITools,
-    toOpenApi,
+    toOpenAITools, // async
+    toOpenApi, // async
     mountOpenApi,
-    runPlan, // exported for testing / manual use
+    // Pass-throughs for advanced usage/testing:
+    runPlan: (steps, opts = {}) => runPlan(api, steps, opts),
   };
   return api;
 }

@@ -1,12 +1,6 @@
 // src/ui/minihttp-controller.js
 import { toolsService } from "./ToolsService.js";
 
-/**
- * Thin controller:
- *  - kicks service.sync()
- *  - re-broadcasts service "change" as `eventName` (default "tools:change")
- *  - pass-through getters & actions for UI
- */
 export class ToolsController extends EventTarget {
   constructor({ service = toolsService, eventName = "tools:change" } = {}) {
     super();
@@ -23,7 +17,6 @@ export class ToolsController extends EventTarget {
       );
     };
     this.svc.addEventListener("change", this._onSvc);
-
     this._ready = this.svc.sync();
   }
 
@@ -34,15 +27,9 @@ export class ToolsController extends EventTarget {
     this.svc.removeEventListener("change", this._onSvc);
   }
 
-  // ----- pass-through state -----
-  get base() {
-    return this.svc.base;
-  }
+  // state pass-throughs...
   get src() {
     return this.svc.src;
-  }
-  get openapiUrl() {
-    return this.svc.openapiUrl;
   }
   get method() {
     return this.svc.method;
@@ -75,12 +62,12 @@ export class ToolsController extends EventTarget {
     return this.svc.error;
   }
 
-  // ----- pass-through actions -----
+  // actions pass-throughs
   refreshTools(opts) {
     return this.svc.refreshTools(opts);
   }
-  setTool(name, opts) {
-    return this.svc.setTool(name, opts);
+  setTool(name) {
+    return this.svc.setTool(name);
   }
   setMethod(m) {
     return this.svc.setMethod(m);
@@ -96,5 +83,22 @@ export class ToolsController extends EventTarget {
   }
   call() {
     return this.svc.call();
+  }
+
+  // convenience
+  async callNamed(name, args = {}) {
+    return this.svc.callNamed(name, args);
+  }
+  async invokeNamed(name, args = {}) {
+    return this.svc.invokeNamed(name, args);
+  }
+
+  // 🔧 FIX: accept + forward payload
+  async resumePlan(checkpoint, payload = {}) {
+    return this.svc.resumePlan(checkpoint, payload);
+  }
+
+  cancelPlan(checkpoint) {
+    return this.svc.cancelPlan(checkpoint);
   }
 }

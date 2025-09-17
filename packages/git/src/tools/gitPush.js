@@ -1,4 +1,4 @@
-import { runGit, getCwd, currentBranch } from "./helpers.js";
+import { runGit, getCwd, currentBranch } from "@loki/git/helpers";
 
 export const gitPush = {
   name: "gitPush",

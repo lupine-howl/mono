@@ -6,8 +6,11 @@ import "@loki/ai-chat/ui/chat-tool-select.js";
 import "@loki/ai-chat/ui/model-select.js";
 import "@loki/ai-chat/ui/context-viewer.js";
 import "@loki/ai-chat/ui/attachment-picker.js";
+import * as aiTools from "@loki/ai-chat/tools";
 
-export default ({ components }) => {
+export default ({ components, tools }) => {
+  console.log(aiTools);
+  tools.defineMany({ ...aiTools });
   const ns = "chat";
 
   components.push({

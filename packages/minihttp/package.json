@@ -16,7 +16,7 @@
     },
     "./schemas/*": "./src/schemas/*",
     "./ui/*": "./src/ui/*",
-    "./tools/*": "./src/tools/*",
+    "./tools": "./src/tools/index.js",
     "./util": "./src/shared/index.js"
   },
   "scripts": {

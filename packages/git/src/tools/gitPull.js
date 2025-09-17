@@ -1,4 +1,4 @@
-import { runGit, getCwd, currentBranch, GIT_DEFAULTS } from "./helpers.js";
+import { runGit, getCwd, currentBranch, GIT_DEFAULTS } from "@loki/git/helpers";
 
 export const gitPull = {
   name: "gitPull",

@@ -177,20 +177,21 @@ export class GitUIService {
     });
 
     // Ask the AI to propose args for the "gitCommit" tool, but do NOT execute.
-    const outcome = await aiChatService.callAITool({
+    const outcome = await rpc.$call("aiRequest", {
       prompt:
         "Generate a concise, descriptive git commit message (subject <= 50 chars, optional multi-line body). Prefer imperative mood. If many files changed, summarize themes. Use bullets only if helpful.",
       toolName: "gitCommit",
-      execute: false, // don't run `git commit`, just propose args
-      restore: true,
-      toolArgs: { ws, allowEmpty: false }, // model fills subject/body
-      context: [contextStr], // <-- the context we built
+      system: contextStr,
+      force: true,
     });
 
+    console.log("AI outcome for gitCommit:", outcome);
+    const data = outcome?.data || {};
+
     // outcome shape depends on your submit(); handle the common cases:
-    if (outcome?.called === "gitCommit" && outcome?.args) {
-      const subject = String(outcome.args.subject || "").trim();
-      const body = String(outcome.args.body || "").trim();
+    if (data?.tool_name === "gitCommit" && data?.tool_args) {
+      const subject = String(data.tool_args.subject || "").trim();
+      const body = String(data.tool_args.body || "").trim();
       if (subject) {
         this.store.setCommitDraft(subject, body, {
           ws,
@@ -212,28 +213,6 @@ export class GitUIService {
         return { ok: true, subject, body, source: "ai:executed-result" };
       }
     }
-
-    // Fallback to old RPC generator if AI didn’t propose args (keeps UX from dead-ending)
-    try {
-      const r = await rpc.$call("gitGenerateCommit", {
-        ws,
-        preferStaged,
-        maxFilesInBody,
-      });
-      if (r?.subject) {
-        this.store.setCommitDraft(r.subject, r.body || "", {
-          ws,
-          source: r.source || "heuristic",
-        });
-        return {
-          ok: true,
-          subject: r.subject,
-          body: r.body || "",
-          source: "heuristic",
-        };
-      }
-    } catch {}
-
     return { ok: false, error: "No commit draft generated" };
   }
 

@@ -1,5 +1,5 @@
 // src/shared/ToolsService.js
-// Minimal, drop-in compatible
+// Minimal, drop-in compatible + plan resume helpers
 
 import { getGlobalSingleton } from "@loki/utilities";
 import { toolRegistry as rpc } from "./toolRegistry.js";
@@ -22,6 +22,7 @@ export class ToolsService extends EventTarget {
     this.calling = false;
     this.result = null;
     this.error = null;
+    this.method = "POST";
 
     this._ready = null;
   }
@@ -38,6 +39,7 @@ export class ToolsService extends EventTarget {
       calling: this.calling,
       result: this.result,
       error: this.error,
+      method: this.method,
     };
   }
   subscribe(fn) {
@@ -61,9 +63,7 @@ export class ToolsService extends EventTarget {
     this.error = null;
     this._emit("tools:loading");
     try {
-      // try /rpc/tools (structured); else fallback to /rpc (names)
-      let tools = await this._fetchToolsList(`${this.src}/tools`);
-      if (!tools) tools = await this._fetchNamesList(this.src);
+      const tools = await rpc.list();
       this.tools = this._normalizeTools(tools);
 
       const stored = isBrowser()
@@ -126,6 +126,7 @@ export class ToolsService extends EventTarget {
         name,
         description: it?.description || "",
         parameters: it?.parameters || null,
+        isPlan: typeof it?.plan === "function",
       });
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
@@ -141,11 +142,20 @@ export class ToolsService extends EventTarget {
     this.toolName = name;
     if (isBrowser()) localStorage.setItem(this.storageKey, name);
     this.tool = this.tools.find((t) => t.name === name) || null;
-    this.schema = this.tool?.parameters || { type: "object", properties: {} };
+    // parameters can be a function (sync/async)
+    this.schema =
+      typeof this.tool?.parameters === "function"
+        ? await this.tool.parameters()
+        : this.tool?.parameters || { type: "object", properties: {} };
     this.values = this._defaultValues(this.schema);
     this.result = null;
     this.error = null;
     this._emit("select");
+  }
+
+  setMethod(method = "POST") {
+    this.method = String(method || "POST").toUpperCase();
+    this._emit("method");
   }
 
   setValues(next = {}) {
@@ -216,12 +226,90 @@ export class ToolsService extends EventTarget {
     }
   }
 
-  /** Remote-only execution bypassing stubs. */
+  /** Alias (clearer API for UI) */
+  async invokeNamed(name, args = {}) {
+    return this.invoke(name, args);
+  }
+
+  /** Select a tool, set args, call it, and keep result in state. */
+  async callNamed(name, args = {}) {
+    if (!name) throw new Error("callNamed: missing tool name");
+    await this.setTool(name);
+    this.setValues(args || {});
+    await this.call();
+  }
+
+  /** Remote-only execution bypassing stubs. (kept for parity; same as $call here) */
   async invokeRemote(name, args = {}) {
     if (!name) throw new Error("invokeRemote: missing tool name");
     return rpc.$call(name, args);
   }
+
+  // src/shared/ToolsService.js
+  // ...
+  async resumePlan(checkpoint, payload = {}) {
+    if (!checkpoint || (!checkpoint.tool && !checkpoint.parentTool)) {
+      throw new Error("resumePlan: invalid checkpoint");
+    }
+    const toolName = checkpoint.tool || checkpoint.parentTool;
+    const t = rpc.find(toolName);
+    if (!t || typeof t.plan !== "function") {
+      throw new Error(`resumePlan: tool "${toolName}" is not a plan tool`);
+    }
+
+    const originalCtx = checkpoint.ctx || {};
+    const mergedInput = { ...(originalCtx.$input || {}), ...(payload || {}) };
+
+    // Also expose payload in the "form" shape to satisfy flows that read form values.
+    const mergedCtx = {
+      ...originalCtx,
+      $input: mergedInput,
+      form: { data: { form: { values: mergedInput } } },
+    };
+
+    // Recompute steps using merged initial args
+    const steps = t.plan(mergedInput, mergedCtx) || [];
+
+    this.calling = true;
+    this._emit("plan:resume:start", { checkpoint, toolName });
+
+    try {
+      const final = await rpc.runPlan(steps, {
+        initialArgs: mergedInput,
+        ctx: mergedCtx,
+        parentTool: toolName,
+        toolSpec: t,
+        // resume AFTER the paused step
+        resumeFrom: (checkpoint.index ?? -1) + 1,
+        resumePath: Array.isArray(checkpoint.path) ? checkpoint.path : null,
+      });
+      this.result = final;
+      this.error = null;
+      this._emit("result", { ok: true, resumed: true });
+      return final;
+    } catch (e) {
+      const msg = String(e?.message || e);
+      this.error = msg;
+      this._emit("result", { ok: false, resumed: true, error: msg });
+      throw e;
+    } finally {
+      this.calling = false;
+      this._emit("call:done");
+    }
+  }
+  // ...
+
+  /**
+   * UI-level cancel (no registry state to clear) — clears current result and emits an event.
+   * You can extend this to call a dedicated cancel tool if you later add one.
+   */
+  cancelPlan(checkpoint) {
+    this._emit("plan:cancel", { checkpoint });
+    // leave last result visible or clear it, your call:
+    // this.clearResult();
+  }
 }
+
 // ---- singleton helpers ----
 export function getToolsService(opts = {}) {
   const KEY = Symbol.for("@loki/minihttp:service@minimal");

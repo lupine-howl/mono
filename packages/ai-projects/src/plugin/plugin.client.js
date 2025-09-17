@@ -10,8 +10,10 @@ import "@loki/ai-projects/ui/conversation-list.js";
 import "@loki/ai-projects/ui/project-viewer.js";
 import "@loki/file-browser/ui/workspace-select.js";
 import "@loki/file-browser/ui/file-browser.js";
+import * as aiTools from "@loki/ai-chat/tools";
 
-export default ({ components }) => {
+export default ({ components, tools }) => {
+  tools.defineMany({ ...aiTools });
   const ns = "chat-project";
   components.push({
     composer: [
@@ -41,25 +43,25 @@ export default ({ components }) => {
         order: 20,
         wrapperStyle: "card",
         render: () => html`<context-viewer></context-viewer>`,
-        left:[
-      {
-        id: `${ns}:workspace-select`,
-        label: "📁 Workspaces",
-        order: 30,
-        render: () => html`<workspace-select></workspace-select>`,
-      },
-      {
-        id: `${ns}:browser`,
-        label: "📁 Files",
-        order: 30,
-        render: () => html`<file-browser></file-browser>`,
-      },
-    ],
+        left: [
+          {
+            id: `${ns}:workspace-select`,
+            label: "📁 Workspaces",
+            order: 30,
+            render: () => html`<workspace-select></workspace-select>`,
+          },
+          {
+            id: `${ns}:browser`,
+            label: "📁 Files",
+            order: 30,
+            render: () => html`<file-browser></file-browser>`,
+          },
+        ],
       },
       {
         id: `${ns}:project`,
         label: "📁 Project",
-        noTab:true,
+        noTab: true,
         order: 2,
         render: () => html`<project-viewer></project-viewer>`,
         left: [

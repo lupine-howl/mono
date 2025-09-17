@@ -24,7 +24,6 @@ export class ToolViewer extends LitElement {
       border-radius: 12px;
     }
 
-    /* Header */
     .head {
       display: flex;
       gap: 8px 12px;
@@ -58,7 +57,6 @@ export class ToolViewer extends LitElement {
       white-space: nowrap;
     }
 
-    /* Form grid */
     .grid {
       display: grid;
       grid-template-columns: 180px 1fr;
@@ -67,7 +65,7 @@ export class ToolViewer extends LitElement {
     }
     .k {
       color: #9aa3b2;
-      padding-top: 6px; /* aligns with input padding */
+      padding-top: 6px;
     }
     .hint {
       color: #9aa3b2;
@@ -79,7 +77,6 @@ export class ToolViewer extends LitElement {
       overflow: visible;
     }
 
-    /* Inputs */
     input,
     textarea,
     select {
@@ -104,7 +101,6 @@ export class ToolViewer extends LitElement {
       resize: vertical;
     }
 
-    /* Buttons row */
     .row {
       display: flex;
       gap: 8px;
@@ -135,7 +131,6 @@ export class ToolViewer extends LitElement {
       cursor: default;
     }
 
-    /* Details / code blocks */
     code,
     pre {
       background: #131317;
@@ -156,7 +151,6 @@ export class ToolViewer extends LitElement {
       color: #c7d2fe;
     }
 
-    /* Checkbox/toggles group */
     .toggles {
       display: grid;
       grid-template-columns: 180px 1fr;
@@ -187,13 +181,11 @@ export class ToolViewer extends LitElement {
   `;
 
   static properties = {
-    // Optional endpoint overrides (rarely needed)
     static: { type: Boolean, reflect: true },
     base: { type: String },
     src: { type: String },
     openapiUrl: { type: String },
 
-    // Initialize with a tool + args + method
     tool: { type: String },
     args: {
       attribute: "args",
@@ -221,7 +213,6 @@ export class ToolViewer extends LitElement {
 
   constructor() {
     super();
-
     this.controller = new ToolsController();
 
     this._tool = null;
@@ -232,17 +223,34 @@ export class ToolViewer extends LitElement {
     this._result = null;
     this._error = null;
 
+    this._normalizing = false;
+
     this._onChange = (e) => {
       const d = e.detail ?? {};
+      let schemaChanged = false,
+        valuesChanged = false;
+
       if ("tool" in d) this._tool = d.tool;
-      if ("schema" in d) this._schema = d.schema;
-      if ("values" in d) this._values = d.values;
+      if ("schema" in d) {
+        this._schema = d.schema;
+        schemaChanged = true;
+      }
+      if ("values" in d) {
+        this._values = d.values;
+        valuesChanged = true;
+      }
       if ("method" in d) this._method = d.method;
       if ("calling" in d) this._calling = d.calling;
       if (d.type?.startsWith("result") || d.type === "call:done") {
         if ("result" in d) this._result = d.result;
         if ("error" in d) this._error = d.error;
       }
+
+      // Normalize whenever schema or values change
+      if (schemaChanged || valuesChanged) {
+        this._normalizeAll();
+      }
+
       this.requestUpdate();
     };
     this.controller.addEventListener("tools:change", this._onChange);
@@ -255,6 +263,7 @@ export class ToolViewer extends LitElement {
       this._calling = this.controller.calling;
       this._result = this.controller.result;
       this._error = this.controller.error;
+      this._normalizeAll(); // <- ensure we don't carry "" into nullable props
       this.requestUpdate();
     };
 
@@ -266,6 +275,89 @@ export class ToolViewer extends LitElement {
         .catch(() => {});
   }
 
+  // ---------- type helpers ----------
+  typeSet(def) {
+    const t = def?.type;
+    if (Array.isArray(t)) return new Set(t);
+    if (typeof t === "string") return new Set([t]);
+    return new Set();
+  }
+  allowsNull(def) {
+    return this.typeSet(def).has("null");
+  }
+  wantsNumber(def) {
+    const ts = this.typeSet(def);
+    return ts.has("number") || ts.has("integer");
+  }
+  wantsObjectOrArray(def) {
+    const ts = this.typeSet(def);
+    return ts.has("object") || ts.has("array");
+  }
+  wantsString(def) {
+    return this.typeSet(def).has("string");
+  }
+  isPureBoolean(def) {
+    const ts = this.typeSet(def);
+    if (!ts.has("boolean")) return false;
+    if (ts.size === 1) return true;
+    if (ts.size === 2 && ts.has("null")) return true;
+    return false;
+  }
+
+  // ---------- normalization ----------
+  _normalizeAll() {
+    if (this._normalizing || !this._schema?.properties) return;
+    if (this._isPlanPaused) return; // do not touch args while a flow is paused    this._normalizing = true;
+
+    try {
+      const props = this._schema.properties || {};
+      const req = new Set(this._schema.required || []);
+      for (const [k, def] of Object.entries(props)) {
+        const cur = this._values?.[k];
+        const next = this._normalizedValue(def, cur, req.has(k));
+        if (next !== cur) {
+          // Prevent event storms: only set when a change occurred
+          this.controller.setValue(k, next);
+        }
+      }
+    } finally {
+      this._normalizing = false;
+    }
+  }
+
+  _normalizedValue(def, val, isRequired) {
+    // Treat undefined as-is unless required (UI still shows missing)
+    if (val === undefined) return undefined;
+
+    // Map explicit empty string to null if nullable; else leave undefined for non-required
+    if (val === "") {
+      return this.allowsNull(def) ? null : isRequired ? "" : undefined;
+    }
+
+    // If someone passed "null" string, normalize to null when nullable
+    if (val === "null" && this.allowsNull(def)) return null;
+
+    // Coerce numbers if schema allows number/integer
+    if (this.wantsNumber(def) && typeof val === "string") {
+      const n = Number(val);
+      if (!Number.isNaN(n)) return n;
+    }
+
+    // Coerce object/array JSON-like strings
+    if (this.wantsObjectOrArray(def) && typeof val === "string") {
+      const s = val.trim();
+      if (s.startsWith("{") || s.startsWith("[")) {
+        try {
+          return JSON.parse(s);
+        } catch {}
+      }
+      // If empty-ish and nullable, prefer null
+      if (s === "" && this.allowsNull(def)) return null;
+    }
+
+    return val;
+  }
+
   // Keep private service in sync if attributes change after construction
   updated(changed) {
     if (
@@ -273,8 +365,7 @@ export class ToolViewer extends LitElement {
       changed.has("src") ||
       changed.has("openapiUrl")
     ) {
-      // If you need to reactively rebuild the service when endpoints change,
-      // you could do it here. Often not necessary in chat usage.
+      // hook for reactive rebuilds if needed
     }
   }
 
@@ -282,32 +373,65 @@ export class ToolViewer extends LitElement {
     const req = this._schema?.required || [];
     const miss = [];
     for (const k of req) {
+      const def = this._schema?.properties?.[k] || {};
       const v = this._values?.[k];
-      if (v === undefined || v === "") miss.push(k);
+      const allowsNull = this.allowsNull(def);
+      const stringOK = this.wantsString(def);
+
+      if (v === undefined) {
+        miss.push(k);
+        continue;
+      }
+      if (v === null && !allowsNull) {
+        miss.push(k);
+        continue;
+      }
+      if (v === "" && !stringOK) {
+        miss.push(k);
+        continue;
+      }
     }
     return miss;
   }
 
   _updateField(key, ev) {
     const def = this._schema?.properties?.[key] || {};
-    let val;
-    if (def.type === "boolean") {
-      val = ev.target.checked;
-    } else {
-      val = ev.target.value;
-      if ((def.type === "number" || def.type === "integer") && val !== "") {
-        const n = Number(val);
-        if (!Number.isNaN(n)) val = n;
-      } else if (
-        (def.type === "object" || def.type === "array") &&
-        typeof val === "string"
-      ) {
-        try {
-          val = JSON.parse(val);
-        } catch {}
-      }
+    const allowsNull = this.allowsNull(def);
+
+    if (def.type === "boolean" || this.isPureBoolean(def)) {
+      this.controller.setValue(key, !!ev.target.checked);
+      return;
     }
-    this.controller.setValue(key, val);
+
+    let raw = ev.target.value;
+
+    // Convert blank to null when nullable; else omit (undefined)
+    if (raw === "") {
+      const val = allowsNull ? null : undefined;
+      this.controller.setValue(key, val);
+      return;
+    }
+
+    // Coercions
+    if (this.wantsNumber(def)) {
+      const n = Number(raw);
+      if (Number.isNaN(n)) return; // ignore invalid type
+      this.controller.setValue(key, n);
+      return;
+    }
+
+    if (this.wantsObjectOrArray(def) && typeof raw === "string") {
+      try {
+        const obj = JSON.parse(raw);
+        this.controller.setValue(key, obj);
+      } catch {
+        // keep previous value if JSON invalid
+      }
+      return;
+    }
+
+    // default: string or free-form
+    this.controller.setValue(key, raw);
   }
 
   _fieldRow([k, def]) {
@@ -324,65 +448,77 @@ export class ToolViewer extends LitElement {
       </label>
     `;
 
+    // Enum select with nullable blank option
     if (def?.enum) {
+      const allowsNull = this.allowsNull(def);
+      const hasEmptyEnum = Array.isArray(def.enum) && def.enum.includes("");
       return html`
         ${label}
         <div class="v">
           <select
             id=${id}
-            .value=${v ?? ""}
+            .value=${v == null ? "" : String(v)}
             @change=${(e) => this._updateField(k, e)}
           >
-            ${def.enum.map((opt) => html`<option value=${opt}>${opt}</option>`)}
+            ${allowsNull && !hasEmptyEnum
+              ? html`<option value="">(none)</option>`
+              : null}
+            ${def.enum.map(
+              (opt) =>
+                html`<option value=${String(opt)}>${String(opt)}</option>`
+            )}
           </select>
         </div>
       `;
     }
 
-    switch (def?.type) {
-      case "number":
-      case "integer":
-        return html`
-          ${label}
-          <div class="v">
-            <input
-              id=${id}
-              type="number"
-              .value=${v ?? ""}
-              @input=${(e) => this._updateField(k, e)}
-            />
-          </div>
-        `;
-      case "array":
-      case "object":
-        return html`
-          ${label}
-          <div class="v">
-            <textarea
-              id=${id}
-              .value=${typeof v === "string"
-                ? v
-                : v
-                ? JSON.stringify(v, null, 2)
-                : ""}
-              @input=${(e) => this._updateField(k, e)}
-            ></textarea>
-          </div>
-        `;
-      case "boolean":
-        return null; // handled in Toggles
-      default:
-        return html`
-          ${label}
-          <div class="v">
-            <input
-              id=${id}
-              .value=${v ?? ""}
-              @input=${(e) => this._updateField(k, e)}
-            />
-          </div>
-        `;
+    // Pure boolean handled in toggles section
+    if (this.isPureBoolean(def)) return null;
+
+    const ts = this.typeSet(def);
+
+    if (ts.has("number") || ts.has("integer")) {
+      return html`
+        ${label}
+        <div class="v">
+          <input
+            id=${id}
+            type="number"
+            .value=${v == null ? "" : String(v)}
+            @input=${(e) => this._updateField(k, e)}
+          />
+        </div>
+      `;
     }
+
+    if (ts.has("object") || ts.has("array")) {
+      return html`
+        ${label}
+        <div class="v">
+          <textarea
+            id=${id}
+            .value=${v == null
+              ? ""
+              : typeof v === "string"
+              ? v
+              : JSON.stringify(v, null, 2)}
+            @input=${(e) => this._updateField(k, e)}
+          ></textarea>
+        </div>
+      `;
+    }
+
+    // Default: string/free-form
+    return html`
+      ${label}
+      <div class="v">
+        <input
+          id=${id}
+          .value=${v == null ? "" : String(v)}
+          @input=${(e) => this._updateField(k, e)}
+        />
+      </div>
+    `;
   }
 
   _checkboxRow([k, def]) {
@@ -412,10 +548,9 @@ export class ToolViewer extends LitElement {
     const t = this._tool;
     const ready = !this._missingRequired.length;
 
-    // Partition fields into non-boolean and boolean (toggles)
     const entries = Object.entries(this._schema?.properties || {});
-    const fields = entries.filter(([, d]) => d?.type !== "boolean");
-    const toggles = entries.filter(([, d]) => d?.type === "boolean");
+    const toggles = entries.filter(([, d]) => this.isPureBoolean(d));
+    const fields = entries.filter(([, d]) => !this.isPureBoolean(d));
 
     return html`
       <div class="wrap">
@@ -439,10 +574,8 @@ export class ToolViewer extends LitElement {
 
         ${this._schema
           ? html`
-              <!-- Non-boolean fields in two-column grid -->
               <div class="grid">${fields.map((e) => this._fieldRow(e))}</div>
 
-              <!-- Toggles group at the end if any -->
               ${toggles.length
                 ? html`
                     <div class="toggles">
@@ -454,7 +587,6 @@ export class ToolViewer extends LitElement {
                   `
                 : null}
 
-              <!-- Actions (left-aligned) -->
               <div class="row">
                 <button
                   class="btn-primary"

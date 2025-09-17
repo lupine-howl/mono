@@ -1,4 +1,4 @@
-import { runGit, getCwd, parsePorcelain } from "./helpers.js";
+import { runGit, getCwd, parsePorcelain } from "@loki/git/helpers";
 
 export const gitStatus = {
   name: "gitStatus",

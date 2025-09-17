@@ -1,4 +1,4 @@
-import { runGit, getCwd } from "./helpers.js";
+import { runGit, getCwd } from "@loki/git/helpers";
 
 export const gitBranchList = {
   name: "gitBranchList",

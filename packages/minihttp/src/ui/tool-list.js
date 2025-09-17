@@ -5,24 +5,112 @@ import { setActiveTab } from "@loki/layout/util";
 
 export class ToolList extends LitElement {
   static styles = css`
-    :host { display: block; color: #e7e7ea; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .wrap { padding: 8px; background: #0b0b0c; border: 1px solid #1f1f22; border-radius: 12px; }
-    .search { margin-bottom: 8px; }
-    input[type="search"] { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid #2a2a30; background: #0f0f12; color: inherit; font: inherit; }
-    ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-    li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: #0f0f12; border: 1px solid #1f1f22; cursor: pointer; }
-    li:hover { background: #131317; }
-    li.active { background: #15151b; border-color: #2a2a30; }
-    .name { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .menu-btn { background: transparent; border: none; color: inherit; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
-    .menu-btn:hover { background: #191a1f; }
-    .menu { position: relative; }
-    .dropdown { position: absolute; right: 0; top: 24px; background: #0f0f12; border: 1px solid #2a2a30; border-radius: 8px; min-width: 140px; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
-    .dropdown button { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #e7e7ea; padding: 8px 10px; cursor: pointer; font: inherit; }
-    .dropdown button:hover { background: #131317; }
-    .muted { color: #9aa3b2; font-size: 12px; }
-    .empty { padding: 8px; color: #9aa3b2; }
+    :host {
+      display: block;
+      color: #e7e7ea;
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .wrap {
+      padding: 8px;
+      background: #0b0b0c;
+      border: 1px solid #1f1f22;
+      border-radius: 12px;
+    }
+    .search {
+      margin-bottom: 8px;
+    }
+    input[type="search"] {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #2a2a30;
+      background: #0f0f12;
+      color: inherit;
+      font: inherit;
+    }
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 4px;
+    }
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: #0f0f12;
+      border: 1px solid #1f1f22;
+      cursor: pointer;
+    }
+    li:hover {
+      background: #131317;
+    }
+    li.active {
+      background: #15151b;
+      border-color: #2a2a30;
+    }
+    .name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .menu-btn {
+      background: transparent;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+    .menu-btn:hover {
+      background: #191a1f;
+    }
+    .menu {
+      position: relative;
+    }
+    .dropdown {
+      position: absolute;
+      right: 0;
+      top: 24px;
+      background: #0f0f12;
+      border: 1px solid #2a2a30;
+      border-radius: 8px;
+      min-width: 140px;
+      z-index: 10;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+    .dropdown button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      color: #e7e7ea;
+      padding: 8px 10px;
+      cursor: pointer;
+      font: inherit;
+    }
+    .dropdown button:hover {
+      background: #131317;
+    }
+    .muted {
+      color: #9aa3b2;
+      font-size: 12px;
+    }
+    .empty {
+      padding: 8px;
+      color: #9aa3b2;
+    }
   `;
 
   static properties = {
@@ -95,8 +183,10 @@ export class ToolList extends LitElement {
   _filtered() {
     const q = (this._q || "").trim().toLowerCase();
     if (!q) return this._tools;
-    return this._tools.filter((t) =>
-      t.name.toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q)
+    return this._tools.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q)
     );
   }
 
@@ -104,7 +194,12 @@ export class ToolList extends LitElement {
     ev?.stopPropagation?.();
     this.controller.setTool(name);
     this._menuFor = null;
-    try { setActiveTab("tool-viewer"); } catch {}
+    console.log(this.controller.tool);
+    //if (this.controller.tool.isPlan) {
+    //  setActiveTab("tool-console");
+    //} else {
+    setActiveTab("tool-viewer");
+    //}
   }
 
   _toggleMenu(name, ev) {
@@ -116,7 +211,9 @@ export class ToolList extends LitElement {
     ev?.stopPropagation?.();
     this.controller.setTool(name);
     this._menuFor = null;
-    try { setActiveTab("tool-viewer"); } catch {}
+    try {
+      setActiveTab("tool-viewer");
+    } catch {}
   }
 
   render() {
@@ -140,22 +237,33 @@ export class ToolList extends LitElement {
               ${list.map((t) => {
                 const active = t.name === this._value;
                 const open = this._menuFor === t.name;
-                return html`
-                  <li class=${active ? "active" : ""} @click=${() => this._select(t.name)}>
-                    <div class="name">
-                      <span class="label">${t.name}</span>
-                    </div>
-                    <div class="menu">
-                      <button class="menu-btn" title="Menu" @click=${(e) => this._toggleMenu(t.name, e)}>
-                        ⋮
-                      </button>
-                      ${open
-                        ? html`<div class="dropdown" @click=${(e) => e.stopPropagation()}>
-                            <button @click=${(e) => this._edit(t.name, e)}>Edit</button>
-                          </div>`
-                        : null}
-                    </div>
-                  </li>`;
+                return html` <li
+                  class=${active ? "active" : ""}
+                  @click=${() => this._select(t.name)}
+                >
+                  <div class="name">
+                    <span class="label">${t.name}</span>
+                  </div>
+                  <div class="menu">
+                    <button
+                      class="menu-btn"
+                      title="Menu"
+                      @click=${(e) => this._toggleMenu(t.name, e)}
+                    >
+                      ⋮
+                    </button>
+                    ${open
+                      ? html`<div
+                          class="dropdown"
+                          @click=${(e) => e.stopPropagation()}
+                        >
+                          <button @click=${(e) => this._edit(t.name, e)}>
+                            Edit
+                          </button>
+                        </div>`
+                      : null}
+                  </div>
+                </li>`;
               })}
             </ul>`}
       </div>
