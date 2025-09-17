@@ -1,7 +1,7 @@
 // src/ui/chat-cards/chat-images.js
 import { LitElement, html, css } from "lit";
 
-export class ChatImages extends LitElement {
+export class ChatImagesComponent extends LitElement {
   static styles = css`
     .card {
       border: 1px solid #1f1f22;
@@ -180,5 +180,9 @@ export class ChatImages extends LitElement {
 }
 
 if (!customElements.get("chat-images")) {
-  customElements.define("chat-images", ChatImages);
+  customElements.define("chat-images", ChatImagesComponent);
 }
+
+export const ChatCardImages = {
+  render: (props) => html`<chat-images ...=${props}></chat-images>`,
+};

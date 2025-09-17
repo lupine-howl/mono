@@ -9,13 +9,14 @@
   "license": "MIT",
   "exports": {
     ".": "./src/services/index.js",
-    "./plugin": {
-      "browser": "./src/plugin/plugin.client.js",
-      "node": "./src/plugin/plugin.server.js",
-      "default": "./src/plugin/plugin.server.js"
-    },
+    "./plugin": "./src/config.plugin.js",
     "./schemas/*": "./src/schemas/*",
-    "./ui/*": "./src/ui/*",
+    "./ui": {
+      "browser": "./src/ui/index.js",
+      "node": "./src/ui/index.server.js",
+      "default": "./src/ui/index.js"
+    },
+    "./tools": "./src/tools/index.js",
     "./util": "./src/shared/index.js"
   },
   "scripts": {

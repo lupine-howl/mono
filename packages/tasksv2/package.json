@@ -3,7 +3,7 @@
   "type": "module",
   "exports": {
     ".": "./src/services/index.js",
-    "./plugin": "./src/plugin.config.js",
+    "./plugin": "./src/config.plugin.js",
     "./schemas/*": "./src/schemas/*",
     "./ui": {
       "browser": "./src/ui/index.js",
