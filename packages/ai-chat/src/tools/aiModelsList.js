@@ -5,6 +5,39 @@
 // - Optional filters (include/exclude/prefix/suffix/limit), sorting, and "full" mode
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+const KNOWN_MODELS = [
+  "o4-mini-deep-research",
+  "o4-mini",
+  "o1-pro",
+  "o1-mini",
+  "o1",
+  "gpt-5-nano",
+  "gpt-5-mini",
+  "gpt-5-chat-latest",
+  "gpt-5",
+  "gpt-4o-search-preview",
+  "gpt-4o-realtime-preview",
+  "gpt-4o-mini-tts",
+  "gpt-4o-mini-transcribe",
+  "gpt-4o-mini-search-preview",
+  "gpt-4o-mini-realtime-preview",
+  "gpt-4o-mini-audio-preview",
+  "gpt-4o-mini",
+  "gpt-4o-audio-preview",
+  "gpt-4o",
+  "gpt-4.1-nano",
+  "gpt-4.1-mini",
+  "gpt-4.1",
+  "gpt-4-turbo-preview",
+  "gpt-4-turbo",
+  "gpt-4",
+  "gpt-3.5-turbo",
+  "davinci-002",
+  "dall-e-3",
+  "dall-e-2",
+  "codex-mini-latest",
+  "chatgpt-4o-latest",
+];
 
 /** Convert a filter string to a predicate:
  *  - "/regex/flags" => RegExp
@@ -118,6 +151,17 @@ export const aiModelsList = {
   parameters: params,
   safe: true, // read-only
 
+  async beforeRun() {
+    return {
+      async: true,
+      optimistic: {
+        ok: true,
+        data: {
+          models: KNOWN_MODELS,
+        },
+      },
+    };
+  },
   async handler(values /*, ctx */) {
     const {
       baseUrl = DEFAULT_BASE_URL,

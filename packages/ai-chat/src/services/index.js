@@ -1,6 +1,5 @@
 // server/openai/index.js
 import { mountChatRoute } from "./chatHandler.js";
-import { mountModelsRoute } from "./modelsHandler.js";
 
 /**
  * registerAITools({ router, tools }, opts)
@@ -21,5 +20,4 @@ export function registerAITools(
 ) {
   // Routes
   mountChatRoute(router, tools, { path: aiPath, apiKey, model, baseUrl });
-  mountModelsRoute(router, { path: modelsPath, apiKey, filter: filterModels, baseUrl });
 }

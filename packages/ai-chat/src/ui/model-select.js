@@ -2,6 +2,7 @@
 import { LitElement, html, css } from "lit";
 import { AIChatController } from "../shared/AIChatController.js";
 import "@loki/layout/ui/smart-select.js";
+import { toolRegistry as tools } from "@loki/minihttp/util";
 
 export class ModelSelect extends LitElement {
   static styles = css`
@@ -35,9 +36,6 @@ export class ModelSelect extends LitElement {
   static properties = {
     // Optional external override; if provided, it wins over service model
     value: { type: String },
-    // Where to fetch models from
-    modelsEndpoint: { type: String },
-
     // internal mirrors
     _models: { state: true },
     _loading: { state: true },
@@ -52,8 +50,6 @@ export class ModelSelect extends LitElement {
 
     // inputs
     this.value = "";
-    this.modelsEndpoint = "/api/models";
-
     // state
     this._models = [];
     this._loading = false;
@@ -106,22 +102,22 @@ export class ModelSelect extends LitElement {
   async refresh() {
     this._loading = true;
     this._error = null;
-    try {
-      const r = await fetch(this.modelsEndpoint);
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const j = await r.json();
-      this._models = Array.isArray(j?.models) ? j.models : [];
 
-      // If neither external value nor state.model is set, seed to first option
-      if (!this.value && !this._stateModel && this._models.length) {
-        this._applySelection(this._models[0], /*emit*/ true);
+    await tools.$auto("aiModelsList", {}, (res) => {
+      if (!res?.ok) {
+        this._error = res?.error || "Failed to load models";
+        this._models = [];
+        this._loading = false;
+        this.requestUpdate();
+        return;
       }
-    } catch (e) {
-      this._error = e?.message || String(e);
-      this._models = [];
-    } finally {
+      this._models = res.data?.models || [];
+      if (!this.value && !this._stateModel && this._models.length) {
+        this._applySelection(this._models[0], true);
+      }
       this._loading = false;
-    }
+      this.requestUpdate();
+    });
   }
 
   _applySelection(val, emit = true) {

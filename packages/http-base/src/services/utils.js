@@ -17,6 +17,10 @@ export async function readJSON(req, max = 1_000_000) {
 }
 
 export function sendJSON(res, code, obj) {
+  if (res.headersSent || res.writableEnded) {
+    // Response already taken over (e.g., SSE). Don’t send again.
+    return;
+  }
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(obj ?? {}));
 }
