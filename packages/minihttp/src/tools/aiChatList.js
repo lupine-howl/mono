@@ -17,7 +17,7 @@ export const aiListRequest = {
       items: {
         type: "array",
         description: "List items (plain text).",
-        items: { type: "string" }, // <-- important: include items schema
+        items: { type: "string" },
       },
       comment: {
         type: ["string", "null"],
@@ -63,7 +63,7 @@ export const aiChatList = {
         description:
           "User prompt describing what the list should contain (e.g., '10 ethical dilemmas').",
       },
-      messages: { type: ["array", "null"] }, // see aiRequest for full schema
+      messages: { type: ["array", "null"] },
       n: {
         type: "integer",
         minimum: 1,
@@ -78,6 +78,25 @@ export const aiChatList = {
       max_completion_tokens: { type: ["integer", "null"] },
     },
     required: ["prompt"],
+  },
+
+  // NEW: emit optimistic skeleton so UIs show “waiting” immediately
+  async beforeRun(values) {
+    const n = Number.isInteger(values?.n) ? values.n : 10;
+    const rows = Array.from({ length: n }, (_, i) => ({
+      index: i + 1,
+      item: "…",
+    }));
+    return {
+      async: true, // tell the registry to run this tool async
+      runArgs: values, // keep the real args
+      optimistic: {
+        ok: true,
+        data: { items: rows.map((r) => r.item) },
+        ui: { kind: "table", title: `Generating list (${n})…` },
+        rows,
+      },
+    };
   },
 
   plan(values) {
@@ -95,6 +114,8 @@ export const aiChatList = {
       {
         tool: "aiRequest",
         label: "req",
+        awaitFinal: true,
+
         input: {
           prompt: `${values.prompt}\n\n${hardliner}`,
           messages: values.messages ?? undefined,
@@ -106,18 +127,23 @@ export const aiChatList = {
           force: true,
           toolName: "aiListRequest",
         },
+        // IMPORTANT: keep default (optimistic) behavior so the plan can
+        // surface the skeleton immediately, and then swap to final later.
+        // If you ever want to block until the final list, add awaitFinal: true
+        // awaitFinal: true,
       },
 
       // Normalize the result so the caller always sees { items: string[] }
       {
         finalise: (ctx) => {
+          console.log("aiChatList finalise", { ctx });
           const d = ctx.req?.data || {};
           const toolArgs =
             d.tool_args && typeof d.tool_args === "object" ? d.tool_args : null;
 
           let items = Array.isArray(toolArgs?.items) ? toolArgs.items : [];
 
-          // Defensive trimming / padding to ensure exactly n (shouldn't be needed if the tool call is correct)
+          // Defensive trimming / padding to ensure exactly n
           if (items.length > n) items = items.slice(0, n);
           if (items.length < n) {
             const deficit = n - items.length;
@@ -139,7 +165,7 @@ export const aiChatList = {
               kind: "table",
               title: `List (${n})`,
             },
-            rows, // optional top-level mirror for convenience (your console uses data or data.rows)
+            rows,
           };
         },
       },

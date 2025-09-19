@@ -85,6 +85,22 @@ export const aiChat = {
     required: [],
   },
 
+  beforeRun(values) {
+    return {
+      async: true,
+      runArgs: values,
+      optimistic: {
+        ok: true,
+        data: { content: "…" }, // or response: "…"
+        ui: {
+          kind: "chat",
+          title: values?.title || "Thinking…",
+        },
+        messages: [{ role: "assistant", content: "Thinking…" }],
+      },
+    };
+  },
+
   plan(values) {
     return [
       {

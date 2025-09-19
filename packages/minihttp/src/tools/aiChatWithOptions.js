@@ -84,6 +84,21 @@ export const aiChatWithOptions = {
     required: ["prompt"],
   },
 
+  beforeRun(values) {
+    const n = Math.max(2, Math.min(4, Number(values?.n) || 3));
+    const opts = Array.from({ length: n }, () => "…");
+    return {
+      async: true,
+      runArgs: values,
+      optimistic: {
+        ok: true,
+        data: { response: "Thinking…", options: opts },
+        ui: { kind: "chat", title: values?.title || "Thinking…" },
+        // Optional: emit disabled actions; or let your step.output build them
+      },
+    };
+  },
+
   plan(values) {
     const n = Number.isInteger(values.n) ? values.n : null;
 

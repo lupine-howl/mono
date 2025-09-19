@@ -133,7 +133,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
       }
     };
 
-    // NEW: Beat planner to steer toward a conclusion (setup→rising→midpoint→crisis→climax)
+    // Beat planner to steer toward a conclusion (setup→rising→midpoint→crisis→climax)
     function beatFor(stage, total) {
       if (stage <= 1) return "Setup: establish protagonist/goal + gentle hook.";
       const mid = Math.ceil(total / 2);
@@ -213,9 +213,10 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
         label: "config",
       },
 
-      // 1) Suggest 12 hooks based on config
+      // 1) Suggest 12 hooks based on config (await final to avoid list flicker)
       {
         tool: "aiChatList",
+
         input(ctx) {
           const v = ctx?.form?.data?.form?.values || ctx.cfg || {};
           ctx.cfg = { ...ctx.cfg, ...v };
@@ -266,7 +267,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             ? ctx.cfg.stages
             : 5;
 
-          // NEW: evolving story state to avoid repetition and advance plot
+          // evolving story state
           ctx.state = {
             progress: 0, // 0..1 toward resolution
             tension: 0, // 0..1 rising pressure
@@ -323,6 +324,9 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
           // 3a) Ask model for scene + options with beat + anti-repetition constraints
           {
             tool: "aiChatWithOptions",
+            // default: optimistic (snappy). To strictly wait or pause:
+            // awaitFinal: true,
+            // pauseOnAsync: true,
             input(ctx) {
               const n = Math.max(
                 2,
@@ -330,7 +334,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               );
               const beat = beatFor(ctx.stage || 1, ctx.maxStages || 5);
 
-              // NEW: brief machine-readable recap to steer development & avoid repeats
+              // brief machine-readable recap to steer development & avoid repeats
               const recap = [
                 ctx.state.lastSummary
                   ? `Recent recap: ${ctx.state.lastSummary}`
@@ -348,7 +352,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                 .filter(Boolean)
                 .join(" | ");
 
-              // NEW: anti-repetition motif list
               const avoidList = Array.from(ctx.state.motifs || []).slice(-10);
 
               return {
@@ -374,11 +377,9 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               const narrative = resp.response || "";
               const options = Array.isArray(resp.options) ? resp.options : [];
 
-              // Record narrative & present options
               ctx.currentNarrative = narrative;
               ctx.currentOptions = options;
 
-              // Keep only narrative (no JSON dump) to reduce repetition downstream
               ctx.messages.push({
                 role: "assistant",
                 content: narrative + "\nOPTIONS:" + JSON.stringify(options),
@@ -390,7 +391,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                 args: { choice: opt, choiceIndex: idx },
               }));
 
-              // NEW: cache stage beat for transcript
               const beat = beatFor(ctx.stage || 1, ctx.maxStages || 5);
               ctx.transcriptStages.push({
                 stage: ctx.stage,
@@ -438,9 +438,9 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                 content: `I choose: ${chosen}`,
               });
 
-              // NEW: naive state evolution (simple but effective)
+              // naive state evolution
               const total = ctx.maxStages || 5;
-              const step = 1 / Math.max(2, total); // approach 1.0 by end
+              const step = 1 / Math.max(2, total);
               ctx.state.progress = Math.min(
                 1,
                 (ctx.state.progress || 0) + step
@@ -483,7 +483,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                   (ctx.state.relations["ally"] || 0) + 0.5
                 );
 
-              // NEW: rolling summary to prime the next turn
+              // rolling summary to prime the next turn
               const last2 = ctx.transcriptStages
                 .slice(-2)
                 .map((s) => `${s.stage}:${s.choice ?? "—"}`)
@@ -494,7 +494,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                 (ctx.state.tension * 100) | 0
               }% — recent choices ${last2}`;
 
-              // NEW: remember motifs from narrative (rough heuristic: top nouns/verbs-ish)
+              // remember motifs from narrative (rough heuristic)
               const motifSeeds = (ctx.currentNarrative || "")
                 .split(/\W+/)
                 .filter((w) => w && w.length > 4)
@@ -505,7 +505,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               const nextStage = (ctx.stage || 1) + 1;
               const meta = MODE_META[ctx.cfg.mode];
 
-              // If penultimate stage, explicitly set up climax; if final, prompt for decisive scene.
               let steer = "";
               if (nextStage === ctx.maxStages) {
                 steer =
@@ -535,12 +534,11 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
         ],
       },
 
-      // 4) Tailored ending based on the whole path + state  (uses aiChat; swap to aiChatWithOptions {n:0} if needed)
+      // 4) Tailored ending based on the whole path + state (await final for best result)
       {
         tool: "aiChat",
         input(ctx) {
           const meta = MODE_META[ctx.cfg.mode];
-          // Compact path for the model
           const pathLines = (ctx.path || [])
             .map((p) => `Stage ${p.stage}: ${p.choice}`)
             .join("\n");
@@ -588,7 +586,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                   `ENDING SPEC: ${endingSpec}`,
               },
             ]),
-            // Optional: you can pass temperature/top_p here if your aiChat supports them
           };
         },
         label: "ending",
@@ -602,7 +599,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
       // 5) Wrap-up & full transcript
       {
         return(ctx) {
-          console.log(ctx);
           const meta = MODE_META[ctx.cfg.mode];
 
           // Full transcript with beats and snippets

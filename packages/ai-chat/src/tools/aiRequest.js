@@ -148,9 +148,21 @@ export const aiRequest = {
     "Call OpenAI chat.completions with registry tools injected (with `_meta`), returning the reply and any tool call (clean args + tool_meta).",
   parameters: aiRequestParams,
 
-  async beforeRun(args, ctx) {
-    console.log("aiRequest.beforeRun", args, ctx);
-    return args;
+  /*
+  beforeRun(values) {
+    return {
+      async: true,
+      runArgs: values,
+      optimistic: {
+        ok: true,
+        data: { content: "…" }, // or response: "…"
+        ui: {
+          kind: "chat",
+          title: values?.title || "Thinking…",
+        },
+        messages: [{ role: "assistant", content: "Thinking…" }],
+      },
+    };
   },
   /*
   async runServer(args, ctx) {

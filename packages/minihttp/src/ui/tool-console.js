@@ -479,7 +479,17 @@ export class ToolConsole extends LitElement {
 
     let out;
     const kind = ui.kind;
-    if (kind === "form") out = this._renderForm();
+    if (kind === "form") {
+      const form = payload?.data?.form || {};
+      const schema = form.schema || {};
+      const values = form.values || {};
+      out = html`<div class="wrap">
+        ${this._renderHead()} ${this._renderFormBody(schema, values)}
+        <div class="footer">${this.continueBtn}</div>
+        ${this._renderActions()}
+      </div>`;
+    }
+    //if (kind === "form") out = this._renderForm();
     else if (kind === "chat") out = this._renderChat();
     else if (kind === "image") out = this._renderImage();
     else if (kind === "table") out = this._renderTable();
@@ -518,8 +528,12 @@ export class ToolConsole extends LitElement {
 
   _renderForm() {
     const form = this._result?.data?.form || {};
-    const schema = this._formSchema || form.schema;
-    const values = this._formValues || form.values || {};
+    // Prefer the schema/values that arrived with THIS result; only fall back to cached edits
+    const schema = form.schema || this._formSchema || {};
+    const values =
+      (this._formValues !== null && this._formValues !== undefined
+        ? this._formValues
+        : form.values) || {};
     const disabled = this._requiredMissing(schema, values);
     return html` <div class="wrap">
       ${this._renderHead()} ${this._renderFormBody(schema, values)}

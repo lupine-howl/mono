@@ -1,11 +1,24 @@
 // src/shared/ToolsService.js
-// Minimal, drop-in compatible + plan resume helpers
-
+// Service with DIAGNOSTIC LOGS + direct SSE listening + optimistic→final swap
 import { getGlobalSingleton } from "@loki/utilities";
 import { toolRegistry as rpc } from "./toolRegistry.js";
 
-const isBrowser = () =>
-  typeof window !== "undefined" && typeof localStorage !== "undefined";
+const isBrowser = typeof window !== "undefined";
+const now = () => new Date().toISOString().slice(11, 23);
+const log = (m, o) => {
+  try {
+    console.log(`[ToolsService ${now()}] ${m}`, o);
+  } catch {}
+};
+
+const isRecord = (v) => v && typeof v === "object" && !Array.isArray(v);
+const isAsyncEnvelope = (x) => !!(x && typeof x === "object" && "runId" in x);
+const pickOptimistic = (x) => {
+  if (x && x.ok !== undefined) return x; // already final
+  if (x && x.optimistic && x.optimistic.ok !== undefined) return x.optimistic;
+  if (x && x.__PLAN_PAUSED__) return x; // plan pause preview
+  return x;
+};
 
 export class ToolsService extends EventTarget {
   constructor({ storageKey = "minihttp.selectedTool", src = "/rpc" } = {}) {
@@ -14,20 +27,38 @@ export class ToolsService extends EventTarget {
     this.src = src;
 
     // state
-    this.tools = []; // [{ name, description?, parameters? }]
-    this.toolName = ""; // selected tool name
-    this.tool = null; // selected tool object
-    this.schema = null; // JSON schema for args
-    this.values = {}; // current args
+    this.tools = [];
+    this.toolName = "";
+    this.tool = null;
+    this.schema = null;
+    this.values = {};
+    this.method = "POST";
+
     this.calling = false;
     this.result = null;
     this.error = null;
-    this.method = "POST";
 
+    // optimistic→final correlation
+    this._resultRunId = null; // run currently shown in UI
+    this._pendingRunIds = new Set(); // all runs we care about
     this._ready = null;
+
+    // SSE
+    this._es = null;
+    this._sseBound = false;
+
+    log("ctor", { src, storageKey });
+
+    // Optional: local bus logs (NOTE: only fires for *local* runs, not server)
+    try {
+      rpc.onRun?.((ev) => log(`onRun:${ev.type}`, ev));
+    } catch {}
+
+    if (isBrowser) window.__toolsService = this;
+    this._ensureSSE(); // connect right away
   }
 
-  // ---------- basic state ----------
+  // ---------- subscription ----------
   get() {
     return {
       src: this.src,
@@ -40,6 +71,7 @@ export class ToolsService extends EventTarget {
       result: this.result,
       error: this.error,
       method: this.method,
+      resultRunId: this._resultRunId,
     };
   }
   subscribe(fn) {
@@ -48,9 +80,119 @@ export class ToolsService extends EventTarget {
     return () => this.removeEventListener("change", h);
   }
   _emit(type, extra = {}) {
-    this.dispatchEvent(
-      new CustomEvent("change", { detail: { type, ...this.get(), ...extra } })
+    const detail = { type, ...this.get(), ...extra };
+    log(`emit:${type}`, { runId: this._resultRunId, extra });
+    this.dispatchEvent(new CustomEvent("change", { detail }));
+  }
+
+  // ---------- SSE ----------
+  _ensureSSE() {
+    if (!isBrowser || typeof EventSource === "undefined") return;
+    if (this._es) return;
+
+    const url = new URL(
+      (this.src || "/rpc").replace(/\/+$/, "") + "/events",
+      location.origin
     );
+    log("SSE:connect ->", { url: url.toString() });
+
+    const es = new EventSource(url.toString());
+    this._es = es;
+
+    const onHello = (e) => log("SSE:hello", safeParse(e?.data));
+    const onFinished = (e) => this._onSseFinished(e);
+    const onErrorEv = (e) => this._onSseError(e);
+    const onOpen = () => log("SSE:open", { readyState: es.readyState });
+    const onErr = (ev) => log("SSE:error", ev);
+
+    es.addEventListener("hello", onHello);
+    es.addEventListener("run:finished", onFinished);
+    es.addEventListener("run:error", onErrorEv);
+    es.addEventListener("open", onOpen);
+    es.addEventListener("error", onErr);
+
+    this._sseBound = true;
+  }
+
+  async _onSseFinished(e) {
+    const ev = safeParse(e?.data);
+    log("SSE:run:finished <-", ev);
+
+    const runId = ev?.runId || ev?.id;
+    if (!runId) return;
+
+    // Only care if we have pending interest in this run
+    if (!this._pendingRunIds.has(runId)) {
+      log("SSE:finished ignored (not pending)", { runId });
+      return;
+    }
+
+    // Prefer the payload result if present; else pull from /runs/:id
+    const final =
+      ev.result || (await this._fetchRunResult(runId).catch(() => null));
+    if (!final) {
+      log("SSE:finished but no final result", { runId });
+      return;
+    }
+    this._applyFinal(runId, final);
+  }
+
+  _onSseError(e) {
+    const ev = safeParse(e?.data);
+    const runId = ev?.runId || ev?.id;
+    log("SSE:run:error <-", { ev });
+    if (!runId) return;
+    if (!this._pendingRunIds.has(runId)) return;
+
+    const msg = ev?.error || "run error";
+    // Only apply if this run is currently displayed
+    if (this._resultRunId && runId === this._resultRunId) {
+      this.error = msg;
+      this._emit("result", { ok: false, final: true, runId });
+      this._resultRunId = null;
+    }
+    this._pendingRunIds.delete(runId);
+  }
+
+  async _fetchRunResult(runId) {
+    const base = (this.src || "/rpc").replace(/\/+$/, "");
+    const url = `${base}/runs/${encodeURIComponent(runId)}`;
+    log("fetchRunResult ->", { url });
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    return j?.result || null;
+  }
+
+  _applyFinal(runId, fin) {
+    const willApply = !this._resultRunId || runId === this._resultRunId;
+    log("applyFinal", {
+      runId,
+      willApply,
+      hasOk: !!fin?.ok,
+      paused: !!fin?.__PLAN_PAUSED__,
+    });
+
+    this._pendingRunIds.delete(runId);
+
+    if (!willApply) {
+      log("applyFinal:ignored (mismatch)", {
+        runId,
+        current: this._resultRunId,
+      });
+      return;
+    }
+
+    if (fin && (fin.ok || fin.__PLAN_PAUSED__)) {
+      this.result = fin;
+      this.error = null;
+      this._resultRunId = null;
+      this._emit("result", { ok: true, final: true, runId });
+    } else {
+      this.error = fin?.error || "Unknown error";
+      this._resultRunId = null;
+      this._emit("result", { ok: false, final: true, runId });
+    }
   }
 
   // ---------- tools list ----------
@@ -64,15 +206,17 @@ export class ToolsService extends EventTarget {
     this._emit("tools:loading");
     try {
       const tools = await rpc.list();
+      log("refreshTools:list", { count: (tools || []).length });
       this.tools = this._normalizeTools(tools);
 
-      const stored = isBrowser()
+      const stored = isBrowser
         ? localStorage.getItem(this.storageKey) || ""
         : "";
       const choice =
         (stored && this.tools.find((t) => t.name === stored)?.name) ||
         this.tools[0]?.name ||
         "";
+      log("refreshTools:choice", { stored, choice });
       await this.setTool(choice || "");
       this._emit("tools");
     } catch (e) {
@@ -82,39 +226,13 @@ export class ToolsService extends EventTarget {
       this.tool = null;
       this.schema = null;
       this.values = {};
+      log("refreshTools:error", { error: this.error });
       this._emit("error", { error: this.error });
     } finally {
       this._emit("tools:loaded");
     }
   }
 
-  async _fetchToolsList(url) {
-    try {
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!r.ok) return null;
-      const j = await r.json();
-      const arr = Array.isArray(j?.tools) ? j.tools : null;
-      if (!arr) return null;
-      return arr.map((it) =>
-        it?.function
-          ? {
-              name: it.function.name,
-              description: it.function.description,
-              parameters: it.function.parameters,
-            }
-          : it
-      );
-    } catch {
-      return null;
-    }
-  }
-  async _fetchNamesList(url) {
-    const r = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    const j = await r.json();
-    const names = Array.isArray(j?.tools) ? j.tools : [];
-    return names.map((n) => ({ name: String(n) }));
-  }
   _normalizeTools(list) {
     const out = [];
     const seen = new Set();
@@ -136,20 +254,25 @@ export class ToolsService extends EventTarget {
   // ---------- selection & args ----------
   async setTool(name) {
     if (!name || name === this.toolName) {
+      log("setTool:noop", { name, current: this.toolName });
       this._emit("select");
       return;
     }
+    log("setTool:start", { name });
     this.toolName = name;
-    if (isBrowser()) localStorage.setItem(this.storageKey, name);
+    if (isBrowser) localStorage.setItem(this.storageKey, name);
     this.tool = this.tools.find((t) => t.name === name) || null;
-    // parameters can be a function (sync/async)
+
     this.schema =
       typeof this.tool?.parameters === "function"
         ? await this.tool.parameters()
         : this.tool?.parameters || { type: "object", properties: {} };
+
     this.values = this._defaultValues(this.schema);
     this.result = null;
     this.error = null;
+    this._resultRunId = null;
+
     this._emit("select");
   }
 
@@ -157,19 +280,17 @@ export class ToolsService extends EventTarget {
     this.method = String(method || "POST").toUpperCase();
     this._emit("method");
   }
-
   setValues(next = {}) {
     this.values = { ...(this.values || {}), ...(next || {}) };
     this._emit("args");
   }
-
   setValue(key, value) {
     this.values = { ...(this.values || {}), [key]: value };
     this._emit("args");
   }
-
   clearResult() {
     this.result = null;
+    this._resultRunId = null;
     this._emit("result:clear");
   }
 
@@ -184,18 +305,67 @@ export class ToolsService extends EventTarget {
     return out;
   }
 
-  // ---------- calls ----------
-  /** Uses currently selected tool + values; stores result/error. */
+  // ---------- core calls ----------
   async call() {
     if (!this.toolName) return;
     this.calling = true;
     this.result = null;
     this.error = null;
+    this._resultRunId = null;
     this._emit("call:start");
+
+    // Ensure SSE is up before we start an async call
+    this._ensureSSE();
+
     try {
+      log("call:rpc.$call ->", { tool: this.toolName, args: this.values });
       const body = await rpc.$call(this.toolName, this.values);
-      this.result = body;
-      this._emit("result", { ok: true });
+
+      // If server accepted async but did not attach .final, synthesize it
+      if (
+        isAsyncEnvelope(body) &&
+        (!body.final || typeof body.final.then !== "function")
+      ) {
+        try {
+          const p = rpc.awaitFinal?.(body.runId);
+          if (p && typeof p.then === "function") {
+            Object.defineProperty(body, "final", {
+              enumerable: false,
+              configurable: true,
+              value: p,
+            });
+          }
+        } catch {}
+      }
+
+      const seed = pickOptimistic(body);
+      this.result = seed;
+      this.error = null;
+
+      // Track run → we will accept SSE final only for pending ones
+      const runId = isAsyncEnvelope(body) ? body.runId : null;
+      this._resultRunId = runId;
+      if (runId) this._pendingRunIds.add(runId);
+
+      this._emit("result", {
+        ok: !!seed?.ok || !!seed?.__PLAN_PAUSED__,
+        optimistic: !!runId,
+        runId: runId || undefined,
+      });
+
+      // Also attach the promise path as a fallback (proxy & devtools friendly)
+      if (runId && body.final && typeof body.final.then === "function") {
+        body.final.then(
+          (fin) => this._applyFinal(runId, fin),
+          (err) =>
+            this._onSseError({
+              data: JSON.stringify({
+                runId,
+                error: String(err?.message || err),
+              }),
+            })
+        );
+      }
     } catch (e) {
       this.error = String(e?.message || e);
       this._emit("result", { ok: false });
@@ -205,14 +375,52 @@ export class ToolsService extends EventTarget {
     }
   }
 
-  /** One-off execution; does not mutate selection/result. */
   async invoke(name, args = {}) {
     if (!name) throw new Error("invoke: missing tool name");
-    this.calling = true;
+    this._ensureSSE();
     this._emit("call:start", { invoked: name });
+
     try {
       const body = await rpc.$call(name, args);
-      this._emit("invoke:result", { ok: true });
+      if (
+        isAsyncEnvelope(body) &&
+        (!body.final || typeof body.final.then !== "function")
+      ) {
+        try {
+          const p = rpc.awaitFinal?.(body.runId);
+          if (p && typeof p.then === "function") {
+            Object.defineProperty(body, "final", {
+              enumerable: false,
+              configurable: true,
+              value: p,
+            });
+          }
+        } catch {}
+      }
+
+      const optimistic = pickOptimistic(body);
+      const runId = isAsyncEnvelope(body) ? body.runId : null;
+      if (runId) this._pendingRunIds.add(runId);
+
+      this._emit("invoke:result", {
+        ok: !!optimistic?.ok || !!optimistic?.__PLAN_PAUSED__,
+        optimistic: !!runId,
+        runId,
+        body: optimistic,
+      });
+
+      if (runId && body.final && typeof body.final.then === "function") {
+        body.final.then(
+          (fin) => this._applyFinal(runId, fin),
+          (err) =>
+            this._onSseError({
+              data: JSON.stringify({
+                runId,
+                error: String(err?.message || err),
+              }),
+            })
+        );
+      }
       return body;
     } catch (e) {
       this._emit("invoke:result", {
@@ -221,32 +429,20 @@ export class ToolsService extends EventTarget {
       });
       throw e;
     } finally {
-      this.calling = false;
       this._emit("call:done");
     }
   }
 
-  /** Alias (clearer API for UI) */
-  async invokeNamed(name, args = {}) {
-    return this.invoke(name, args);
-  }
-
-  /** Select a tool, set args, call it, and keep result in state. */
   async callNamed(name, args = {}) {
-    if (!name) throw new Error("callNamed: missing tool name");
     await this.setTool(name);
     this.setValues(args || {});
     await this.call();
   }
-
-  /** Remote-only execution bypassing stubs. (kept for parity; same as $call here) */
-  async invokeRemote(name, args = {}) {
-    if (!name) throw new Error("invokeRemote: missing tool name");
-    return rpc.$call(name, args);
+  async invokeNamed(name, args = {}) {
+    return this.invoke(name, args);
   }
 
-  // src/shared/ToolsService.js
-  // ...
+  // ---------- plan resume / cancel ----------
   async resumePlan(checkpoint, payload = {}) {
     if (!checkpoint || (!checkpoint.tool && !checkpoint.parentTool)) {
       throw new Error("resumePlan: invalid checkpoint");
@@ -259,15 +455,11 @@ export class ToolsService extends EventTarget {
 
     const originalCtx = checkpoint.ctx || {};
     const mergedInput = { ...(originalCtx.$input || {}), ...(payload || {}) };
-
-    // Also expose payload in the "form" shape to satisfy flows that read form values.
     const mergedCtx = {
       ...originalCtx,
       $input: mergedInput,
       form: { data: { form: { values: mergedInput } } },
     };
-
-    // Recompute steps using merged initial args
     const steps = t.plan(mergedInput, mergedCtx) || [];
 
     this.calling = true;
@@ -279,12 +471,13 @@ export class ToolsService extends EventTarget {
         ctx: mergedCtx,
         parentTool: toolName,
         toolSpec: t,
-        // resume AFTER the paused step
         resumeFrom: (checkpoint.index ?? -1) + 1,
         resumePath: Array.isArray(checkpoint.path) ? checkpoint.path : null,
       });
+
       this.result = final;
       this.error = null;
+      this._resultRunId = null;
       this._emit("result", { ok: true, resumed: true });
       return final;
     } catch (e) {
@@ -297,22 +490,24 @@ export class ToolsService extends EventTarget {
       this._emit("call:done");
     }
   }
-  // ...
 
-  /**
-   * UI-level cancel (no registry state to clear) — clears current result and emits an event.
-   * You can extend this to call a dedicated cancel tool if you later add one.
-   */
   cancelPlan(checkpoint) {
     this._emit("plan:cancel", { checkpoint });
-    // leave last result visible or clear it, your call:
-    // this.clearResult();
   }
 }
 
-// ---- singleton helpers ----
+// ---- utils ----
+function safeParse(s) {
+  try {
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---- singleton ----
 export function getToolsService(opts = {}) {
-  const KEY = Symbol.for("@loki/minihttp:service@minimal");
+  const KEY = Symbol.for("@loki/minihttp:service@withSSE");
   return getGlobalSingleton(KEY, () => new ToolsService(opts));
 }
 export const toolsService = getToolsService();

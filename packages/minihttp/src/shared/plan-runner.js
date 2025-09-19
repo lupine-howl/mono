@@ -1,8 +1,29 @@
-// src/registry/plan-runner.js
-
 // --- helpers to evaluate booleans/funcs/values
 const asBool = (v, ...args) => (typeof v === "function" ? !!v(...args) : !!v);
 const asVal = (v, ...args) => (typeof v === "function" ? v(...args) : v);
+
+// NEW: optimistic/final helpers
+function isAsyncEnvelope(x) {
+  return !!(x && typeof x === "object" && "runId" in x);
+}
+function pickOptimistic(x) {
+  // prefer final “ok/data” shape if already resolved; else optimistic
+  if (x && x.ok !== undefined) return x; // already final
+  if (x && x.optimistic && x.optimistic.ok !== undefined) return x.optimistic;
+  return x;
+}
+async function ensureFinal(x) {
+  if (!isAsyncEnvelope(x)) return x;
+  if (x.final && typeof x.final.then === "function") {
+    try {
+      const fin = await x.final;
+      return fin ?? x.optimistic ?? x;
+    } catch (e) {
+      return { ok: false, error: String(e?.message || e) };
+    }
+  }
+  return x.optimistic ?? x;
+}
 
 // Resolve args for a step from the following (in priority order):
 //  1) step.input (object | (ctx, initialArgs) => object)
@@ -235,8 +256,6 @@ export async function executeSteps(
 
         outCtx = sub.outCtx;
         last = sub.last;
-        // After the first resumed iteration, consume the resume info so subsequent
-        // iterations start from inner step 0 and run the whole loop body again.
         if (useResumeThisIter) {
           innerLoopPath = null;
           innerResumeFrom = 0;
@@ -267,7 +286,7 @@ export async function executeSteps(
       continue;
     }
 
-    // --- tool step (compute, then possibly pause) ---
+    // --- tool step (compute, then possibly pause/await-final) ---
     if (step.tool) {
       const toolName = step.tool;
       const stepArgs = resolveStepArgs(step, outCtx, last, initialArgs);
@@ -280,8 +299,36 @@ export async function executeSteps(
         args: stepArgs,
       });
 
-      const res = await registry.callLocal(toolName, stepArgs, stepCtx);
-      console.log?.("Tool result", { toolName, res });
+      let res = await registry.callLocal(toolName, stepArgs, stepCtx);
+
+      // NEW: adapt to optimistic envelopes
+      // Prefer optimistic now unless told to await final or pause on async.
+      const wantAwaitFinal = !!(step.awaitFinal || step.await === "final");
+      const pauseOnAsync = !!step.pauseOnAsync;
+
+      if (isAsyncEnvelope(res)) {
+        if (wantAwaitFinal) {
+          res = await ensureFinal(res);
+        } else if (pauseOnAsync) {
+          // Keep optimistic for preview, but pause so resume can proceed with final later.
+          const preview = pickOptimistic(res);
+          if (step.label) outCtx[step.label] = preview;
+          last = preview;
+
+          const checkpoint = makeCheckpoint(i, { ...step, reason: "async" });
+          // Carry runId in checkpoint meta to help UIs correlate if needed
+          checkpoint.meta = {
+            ...(checkpoint.meta || {}),
+            runId: res.runId,
+            tool: toolName,
+          };
+          onEvent?.({ type: "plan:pause", index: i, step, checkpoint });
+          return { outCtx, last, state: { paused: true, checkpoint } };
+        } else {
+          res = pickOptimistic(res);
+        }
+      }
+
       if (step.label) outCtx[step.label] = res;
       last = res;
       onEvent?.({ type: "step:result", index: i, step, result: res });
