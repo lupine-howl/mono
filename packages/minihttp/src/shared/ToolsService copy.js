@@ -43,6 +43,10 @@ export class ToolsService extends EventTarget {
     this._pendingRunIds = new Set(); // all runs we care about
     this._ready = null;
 
+    // SSE
+    this._es = null;
+    this._sseBound = false;
+
     log("ctor", { src, storageKey });
 
     // Optional: local bus logs (NOTE: only fires for *local* runs, not server)
@@ -51,6 +55,7 @@ export class ToolsService extends EventTarget {
     } catch {}
 
     if (isBrowser) window.__toolsService = this;
+    this._ensureSSE(); // connect right away
   }
 
   // ---------- subscription ----------
@@ -78,6 +83,86 @@ export class ToolsService extends EventTarget {
     const detail = { type, ...this.get(), ...extra };
     log(`emit:${type}`, { runId: this._resultRunId, extra });
     this.dispatchEvent(new CustomEvent("change", { detail }));
+  }
+
+  // ---------- SSE ----------
+  _ensureSSE() {
+    if (!isBrowser || typeof EventSource === "undefined") return;
+    if (this._es) return;
+
+    const url = new URL(
+      (this.src || "/rpc").replace(/\/+$/, "") + "/events",
+      location.origin
+    );
+    log("SSE:connect ->", { url: url.toString() });
+
+    const es = new EventSource(url.toString());
+    this._es = es;
+
+    const onHello = (e) => log("SSE:hello", safeParse(e?.data));
+    const onFinished = (e) => this._onSseFinished(e);
+    const onErrorEv = (e) => this._onSseError(e);
+    const onOpen = () => log("SSE:open", { readyState: es.readyState });
+    const onErr = (ev) => log("SSE:error", ev);
+
+    es.addEventListener("hello", onHello);
+    es.addEventListener("run:finished", onFinished);
+    es.addEventListener("run:error", onErrorEv);
+    es.addEventListener("open", onOpen);
+    es.addEventListener("error", onErr);
+
+    this._sseBound = true;
+  }
+
+  async _onSseFinished(e) {
+    const ev = safeParse(e?.data);
+    log("SSE:run:finished <-", ev);
+
+    const runId = ev?.runId || ev?.id;
+    if (!runId) return;
+
+    /*
+    // Only care if we have pending interest in this run
+    if (!this._pendingRunIds.has(runId)) {
+      log("SSE:finished ignored (not pending)", { runId });
+      return;
+    }
+*/
+    // Prefer the payload result if present; else pull from /runs/:id
+    const final =
+      ev.result || (await this._fetchRunResult(runId).catch(() => null));
+    if (!final) {
+      log("SSE:finished but no final result", { runId });
+      return;
+    }
+    this._applyFinal(runId, final);
+  }
+
+  _onSseError(e) {
+    const ev = safeParse(e?.data);
+    const runId = ev?.runId || ev?.id;
+    log("SSE:run:error <-", { ev });
+    if (!runId) return;
+    if (!this._pendingRunIds.has(runId)) return;
+
+    const msg = ev?.error || "run error";
+    // Only apply if this run is currently displayed
+    if (this._resultRunId && runId === this._resultRunId) {
+      this.error = msg;
+      this._emit("result", { ok: false, final: true, runId });
+      this._resultRunId = null;
+    }
+    this._pendingRunIds.delete(runId);
+  }
+
+  async _fetchRunResult(runId) {
+    const base = (this.src || "/rpc").replace(/\/+$/, "");
+    const url = `${base}/runs/${encodeURIComponent(runId)}`;
+    log("fetchRunResult ->", { url });
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    return j?.result || null;
   }
 
   _applyFinal(runId, fin) {
@@ -231,10 +316,12 @@ export class ToolsService extends EventTarget {
     this._resultRunId = null;
     this._emit("call:start");
 
+    // Ensure SSE is up before we start an async call
+    this._ensureSSE();
+
     try {
       log("call:rpc.$call ->", { tool: this.toolName, args: this.values });
       const body = await rpc.$call(this.toolName, this.values);
-      console.log(body);
 
       // If server accepted async but did not attach .final, synthesize it
       if (
@@ -272,7 +359,13 @@ export class ToolsService extends EventTarget {
       if (runId && body.final && typeof body.final.then === "function") {
         body.final.then(
           (fin) => this._applyFinal(runId, fin),
-          (err) => console.error("final error", err)
+          (err) =>
+            this._onSseError({
+              data: JSON.stringify({
+                runId,
+                error: String(err?.message || err),
+              }),
+            })
         );
       }
     } catch (e) {
@@ -286,6 +379,7 @@ export class ToolsService extends EventTarget {
 
   async invoke(name, args = {}) {
     if (!name) throw new Error("invoke: missing tool name");
+    this._ensureSSE();
     this._emit("call:start", { invoked: name });
 
     try {
@@ -320,7 +414,13 @@ export class ToolsService extends EventTarget {
       if (runId && body.final && typeof body.final.then === "function") {
         body.final.then(
           (fin) => this._applyFinal(runId, fin),
-          (err) => console.error("final error", err)
+          (err) =>
+            this._onSseError({
+              data: JSON.stringify({
+                runId,
+                error: String(err?.message || err),
+              }),
+            })
         );
       }
       return body;

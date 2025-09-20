@@ -81,7 +81,7 @@ export const aiChatWithOptions = {
       max_tokens: { type: ["integer", "null"] },
       max_completion_tokens: { type: ["integer", "null"] },
     },
-    required: ["prompt"],
+    required: [],
   },
 
   beforeRun(values) {

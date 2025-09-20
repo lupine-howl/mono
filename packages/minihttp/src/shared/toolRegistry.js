@@ -1092,11 +1092,7 @@ export function createToolRegistry({
     };
   }
 
-  function mountOpenApi(
-    router,
-    path = "/openapi.json",
-    { prefix = "/rpc" } = {}
-  ) {
+  function mountOpenApi(router, path = "/openapi.json", { prefix = "" } = {}) {
     router.get(path, async () => ({
       status: 200,
       json: await toOpenApi({ prefix }),

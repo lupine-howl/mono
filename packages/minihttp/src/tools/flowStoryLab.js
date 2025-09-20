@@ -216,7 +216,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
       // 1) Suggest 12 hooks based on config (await final to avoid list flicker)
       {
         tool: "aiChatList",
-
+        //awaitFinal: true,
         input(ctx) {
           const v = ctx?.form?.data?.form?.values || ctx.cfg || {};
           ctx.cfg = { ...ctx.cfg, ...v };
