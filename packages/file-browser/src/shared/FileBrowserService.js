@@ -81,7 +81,13 @@ class FileBrowserService extends EventTarget {
     this.selection = path ? { path, type } : null;
     this._setStoredSelection(this.selection);
 
-    let newFileData = await fsRead({ws:this.ws, path});
+    let newFileData = {};
+    try {
+      newFileData = await fsRead({ws:this.ws, path});
+      console.log(newFileData);
+    }
+    catch {
+    }
     const isDir = newFileData?.mime === "inode/directory";
 
     if (isDir) {

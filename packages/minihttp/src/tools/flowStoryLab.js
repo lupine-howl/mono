@@ -150,6 +150,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
       // 0) First page: configuration form
       {
         run(ctx) {
+          console.log("flowStoryLab plan run", args, ctx);
           const v = ctx.$input || {};
           const defaults = {
             mode: v.mode ?? "ethical_dilemma",
@@ -225,8 +226,13 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
           ctx.cfg = { ...ctx.cfg, ...v };
           const meta = MODE_META[v.mode] || MODE_META.ethical_dilemma;
           // fullscreen spinner immediately
-          ctx.$ui?.loading?.(`Generating ${meta.label} hooks…`, {
-            step: "hooks_list",
+          ctx.emitUI({
+            type: "ui:loading",
+            payload: {
+              loading: true,
+              message: `Generating ${meta.label} hooks…`,
+              step: "hooks_list",
+            },
           });
           const prompt = `${meta.listPrompt(
             v

@@ -5,6 +5,7 @@ import "@loki/minihttp/ui/tool-viewer.js";
 import "@loki/minihttp/ui/tool-console.js";
 import "@loki/minihttp/ui/tool-directory.js";
 import * as toolsToolsToools from "@loki/minihttp/tools";
+import { EventLogger, EventLoggerAll } from "@loki/events/ui";
 
 export default ({ components, tools }) => {
   tools.defineMany(toolsToolsToools);
@@ -33,6 +34,14 @@ export default ({ components, tools }) => {
         order: 30,
         render: () => html`<tool-console></tool-console>`,
         left: [
+          {
+            id: `events:logger`,
+            label: "🪵 Events",
+            order: 30,
+            ws: "packages/events",
+            path: "src/ui/EventLogger.js",
+            render: () => html`<event-logger></event-logger>`,
+          },
           {
             id: `tool-list`,
             label: "📁 Tools",

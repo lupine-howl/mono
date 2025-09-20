@@ -1,5 +1,12 @@
 // @loki/run-events — channel-agnostic event bus + SSE bridge + client
 
+const noop = () => {};
+const safe = (fn, a) => {
+  try {
+    fn(a);
+  } catch {}
+};
+
 function _now() {
   return Date.now();
 }
@@ -26,61 +33,44 @@ export function createEventBus({ maxSeen = 20000 } = {}) {
   const keyed = new Map(); // Map<key, unsubscribe>
   const seen = new Set(); // Set<event.id>
   const order = []; // ring buffer of ids
-  let flushing = false;
   const q = []; // pending events FIFO
+  let flushing = false;
 
-  function _markSeen(id) {
+  const _markSeen = (id) => {
     if (!id) return;
     if (seen.has(id)) return true;
     seen.add(id);
     order.push(id);
-    if (order.length > maxSeen) {
-      const old = order.shift();
-      seen.delete(old);
-    }
+    if (order.length > maxSeen) seen.delete(order.shift());
     return false;
-  }
+  };
 
   function emit(ev) {
-    // normalize + de-dupe
-    if (!ev || typeof ev !== "object") return;
+    if (!ev || typeof ev !== "object") return; // normalize + de-dupe
     if (!ev.id) ev.id = _id();
     if (!("ts" in ev)) ev.ts = _now();
     if (_markSeen(ev.id)) return; // drop duplicates by id
 
-    // reentrancy guard: queue + flush loop
     q.push(ev);
-    if (flushing) return;
+    if (flushing) return; // reentrancy guard: queue + flush loop
 
     flushing = true;
     try {
       while (q.length) {
         const next = q.shift();
-        // snapshot to protect against handler mutations and repeated add/remove
-        const snapshot = Array.from(listeners);
-        for (const fn of snapshot) {
-          try {
-            fn(next);
-          } catch {}
-        }
+        for (const fn of Array.from(listeners)) safe(fn, next);
       }
     } finally {
       flushing = false;
     }
   }
 
-  function on(fn) {
-    listeners.add(fn);
-    return () => listeners.delete(fn);
-  }
+  const on = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 
   // Ensure only one active listener per key (great for services / hot reload)
   function onKey(key, fn) {
     const old = keyed.get(key);
-    if (old)
-      try {
-        old();
-      } catch {}
+    if (old) safe(old);
     const off = on(fn);
     keyed.set(key, off);
     return () => {
@@ -96,7 +86,6 @@ export function createEventBus({ maxSeen = 20000 } = {}) {
     onKey,
     off: (fn) => listeners.delete(fn),
     listenerCount: () => listeners.size,
-    // debugging helper
     _debug: () => ({ listeners: listeners.size, keyed: [...keyed.keys()] }),
   };
 }
@@ -123,8 +112,8 @@ export function mountEventsSSE(router, { path = "/rpc/events", bus } = {}) {
     });
 
     const write = (ev) => {
+      if (!ev || !ev.type) return;
       try {
-        if (!ev || !ev.type) return;
         res.write(`event: ${ev.type}\n`);
         res.write(`data: ${JSON.stringify(ev)}\n\n`);
       } catch {}
@@ -172,9 +161,8 @@ export function mountEventsIngest(
       user: ctx?.user || undefined,
     };
     if (!ev.type) return { status: 400, json: { error: "Missing event type" } };
-    if (typeof allow === "function" && !allow(ev)) {
+    if (typeof allow === "function" && !allow(ev))
       return { status: 403, json: { error: "Forbidden" } };
-    }
     const out = typeof transform === "function" ? transform(ev) || ev : ev;
     bus.emit(out);
     return { status: 200, json: { ok: true, id: out.id } };
@@ -194,11 +182,10 @@ function _getSharedChannel(eventsUrl) {
 
   const anyListeners = new Set();
   const typeListeners = new Map(); // Map<type, Set<fn>>
+  const fwdCache = new Map(); // Map<type, (MessageEvent)=>void>
   let es = null;
   let refCount = 0;
 
-  // NEW: cache per-type forwarders so we reuse the same callback instance
-  const fwdCache = new Map(); // Map<type, (MessageEvent)=>void>
   const forward = (type) => {
     if (fwdCache.has(type)) return fwdCache.get(type);
     const fn = (e) => {
@@ -210,17 +197,8 @@ function _getSharedChannel(eventsUrl) {
       }
       if (!ev.type) ev.type = type;
       const bucket = typeListeners.get(ev.type);
-      if (bucket)
-        for (const fn of bucket) {
-          try {
-            fn(ev);
-          } catch {}
-        }
-      for (const fn of anyListeners) {
-        try {
-          fn(ev);
-        } catch {}
-      }
+      if (bucket) for (const h of bucket) safe(h, ev);
+      for (const h of anyListeners) safe(h, ev);
     };
     fwdCache.set(type, fn);
     return fn;
@@ -230,19 +208,19 @@ function _getSharedChannel(eventsUrl) {
     if (es || !_isBrowser() || !window.EventSource) return;
     es = new EventSource(eventsUrl);
 
-    // core lifecycle + run events
-    ["hello", "run:started", "run:finished", "run:error"].forEach((t) => {
-      es.addEventListener(t, forward(t));
-    });
-    // wildcard (in case server emits without explicit 'event:' — we still keep it)
-    es.addEventListener("message", forward("message"));
+    const onType = (t) => es.addEventListener(t, forward(t));
+    [
+      "hello",
+      "run:started",
+      "run:finished",
+      "run:error",
+      "ui:loading",
+      "ui:update",
+    ].forEach(onType);
+    es.addEventListener("message", forward("message")); // wildcard fallback
 
-    // NEW: register any types that callers already subscribed to
-    for (const t of typeListeners.keys()) {
-      try {
-        es.addEventListener(t, forward(t));
-      } catch {}
-    }
+    // register any types that callers already subscribed to
+    for (const t of typeListeners.keys()) safe(() => onType(t));
   };
 
   const addRef = () => {
@@ -276,15 +254,8 @@ function _getSharedChannel(eventsUrl) {
       addRef();
       if (!typeListeners.has(type)) typeListeners.set(type, new Set());
       typeListeners.get(type).add(fn);
-      // NEW: if EventSource is already open, start listening to this exact type now
-      if (es) {
-        try {
-          es.addEventListener(type, forward(type));
-        } catch {}
-      } else {
-        // ensure ES so the next tick connects and registers all types
-        ensureES();
-      }
+      if (es) safe(() => es.addEventListener(type, forward(type)));
+      else ensureES();
       return () => {
         const s = typeListeners.get(type);
         if (s) s.delete(fn);
@@ -347,9 +318,7 @@ export function createEventsClient({
       if (ev.type === type && matches(ev, filter)) handler(ev);
     });
     const remoteOff = _isBrowser()
-      ? shared?.addType(type, (ev) => {
-          if (matches(ev, filter)) handler(ev);
-        })
+      ? shared?.addType(type, (ev) => matches(ev, filter) && handler(ev))
       : null;
     return () => {
       localOff?.();
@@ -397,7 +366,7 @@ export function createEventsClient({
     if (!fetchRunStatus) throw new Error("poll: fetchRunStatus not provided");
     const t0 = Date.now();
     let delay = interval;
-    while (true) {
+    for (;;) {
       const j = await fetchRunStatus(runId);
       if (j?.status === "done") return j.result;
       if (j?.status === "error") throw new Error(j.error || "run error");
@@ -414,42 +383,37 @@ export function createEventsClient({
   function awaitFinal(runId, { timeout = 30000, backstopMs = 35000 } = {}) {
     if (!runId) return Promise.reject(new Error("awaitFinal: missing runId"));
 
-    // Reuse an existing one in this tab
     const prev = _pendingFinal.get(runId);
     if (prev) return prev.promise;
 
     let resolve, reject;
-    const promise = new Promise((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-
-    // register first (avoid TDZ + allow immediate dedupe)
-    _pendingFinal.set(runId, {
-      promise,
-      cancel: () => {
-        cleanup();
-        reject(new Error("awaitFinal: cancelled"));
-      },
-    });
+    const promise = new Promise(
+      (res, rej) => ((resolve = res), (reject = rej))
+    );
 
     let cancelled = false;
-    let timer = null;
-
-    const finish = (val, isErr) => {
-      if (cancelled) return;
-      cleanup();
-      isErr ? reject(val) : resolve(val);
-    };
-
+    let timer;
     const cleanup = () => {
       offFin?.();
       offErr?.();
       if (timer) clearTimeout(timer);
       _pendingFinal.delete(runId);
     };
+    const finish = (val, isErr) => {
+      if (cancelled) return;
+      cleanup();
+      isErr ? reject(val) : resolve(val);
+    };
 
-    // Listen for SSE completion
+    _pendingFinal.set(runId, {
+      promise,
+      cancel: () => {
+        cancelled = true;
+        cleanup();
+        reject(new Error("awaitFinal: cancelled"));
+      },
+    });
+
     const offFin = on("run:finished", (ev) => {
       if (ev.runId === runId) finish(ev.result, false);
     });
@@ -457,7 +421,6 @@ export function createEventsClient({
       if (ev.runId === runId) finish(new Error(ev.error || "run error"), true);
     });
 
-    // Backstop: only start polling if SSE didn’t arrive in time
     const startPoll = async () => {
       if (cancelled || !fetchRunStatus) return;
       try {
@@ -468,12 +431,9 @@ export function createEventsClient({
       }
     };
 
-    if (_isBrowser() && window.EventSource) {
+    if (_isBrowser() && window.EventSource)
       timer = setTimeout(startPoll, backstopMs);
-    } else {
-      // No SSE support: poll immediately
-      startPoll();
-    }
+    else startPoll(); // No SSE support: poll immediately
 
     return promise;
   }

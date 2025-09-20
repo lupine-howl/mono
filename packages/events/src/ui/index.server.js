@@ -1,2 +1,2 @@
-export const TaskList = {};
-export const TaskViewer = {};
+export const EventLogger = {};
+export const EventLoggerAll = {};

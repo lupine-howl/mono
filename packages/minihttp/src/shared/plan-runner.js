@@ -1,5 +1,6 @@
 // src/shared/plan-runner.js
 // Pure plan execution utilities (no registry, no network)
+import { globalEventBus } from "@loki/events/util";
 
 const asBool = (v, ...args) => (typeof v === "function" ? !!v(...args) : !!v);
 const asVal = (v, ...args) => (typeof v === "function" ? v(...args) : v);
@@ -40,7 +41,17 @@ export function isPlanTool(t) {
   return !!(t?.plan && typeof t.plan === "function");
 }
 
+function emitUI(event) {
+  // normalized envelope
+  globalEventBus.emit({
+    ts: Date.now(),
+    channel: "ui",
+    ...event,
+  });
+}
+
 export function makePlan(t, args, ctx) {
+  ctx.emitUI = emitUI;
   if (typeof t?.plan === "function") return t.plan(args, ctx) || [];
   return [];
 }
