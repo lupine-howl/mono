@@ -159,6 +159,8 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             branching: Number.isInteger(v.branching) ? v.branching : 3,
           };
           ctx.cfg = defaults;
+          // clear any lingering overlay just in case
+          ctx.$ui?.clear?.();
           return {
             ui: { kind: "form", title: "Story Lab — setup" },
             data: {
@@ -213,21 +215,28 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
         label: "config",
       },
 
-      // 1) Suggest 12 hooks based on config (await final to avoid list flicker)
+      // 1) Suggest 12 hooks based on config (show loader via ctx.$ui)
       {
         tool: "aiChatList",
-        //awaitFinal: true,
+        awaitFinal: true,
+        label: "hooks_list",
         input(ctx) {
           const v = ctx?.form?.data?.form?.values || ctx.cfg || {};
           ctx.cfg = { ...ctx.cfg, ...v };
           const meta = MODE_META[v.mode] || MODE_META.ethical_dilemma;
+          // fullscreen spinner immediately
+          ctx.$ui?.loading?.(`Generating ${meta.label} hooks…`, {
+            step: "hooks_list",
+          });
           const prompt = `${meta.listPrompt(
             v
           )}\nSafety & reading level: ${AGE_GUARDS(v.age)}.`;
           return { prompt, n: 12 };
         },
-        label: "hooks_list",
         output(args, ctx) {
+          // clear overlay once data is ready
+          ctx.$ui?.clear?.();
+
           const list = Array.isArray(args?.data?.items) ? args.data.items : [];
           ctx.hooks = list.slice(0, 12);
           return {
@@ -269,15 +278,15 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
 
           // evolving story state
           ctx.state = {
-            progress: 0, // 0..1 toward resolution
-            tension: 0, // 0..1 rising pressure
-            flags: [], // arbitrary string tags set by choices
-            inventory: [], // items/clues/alliances
-            relations: {}, // npc -> (-1..+1)
-            motifs: new Set(), // to avoid repeating (converted to array in prompts)
-            lastSummary: "", // rolling recap
+            progress: 0,
+            tension: 0,
+            flags: [],
+            inventory: [],
+            relations: {},
+            motifs: new Set(),
+            lastSummary: "",
           };
-          ctx.transcriptStages = []; // {stage, beat, narrative, options[], choice}
+          ctx.transcriptStages = [];
 
           const guard = AGE_GUARDS(ctx.cfg.age);
           const meta = MODE_META[ctx.cfg.mode];
@@ -321,18 +330,22 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
       {
         while: (ctx) => (ctx.stage || 1) <= (ctx.maxStages || 5),
         body: [
-          // 3a) Ask model for scene + options with beat + anti-repetition constraints
+          // 3a) Ask model for scene + options (use ctx.$ui for loader)
           {
             tool: "aiChatWithOptions",
-            // default: optimistic (snappy). To strictly wait or pause:
-            // awaitFinal: true,
-            // pauseOnAsync: true,
+            label: "stage_structured",
+            awaitFinal: true, // strict wait for best quality; no optimistic flicker
             input(ctx) {
               const n = Math.max(
                 2,
                 Math.min(4, Number(ctx.cfg?.branching) || 3)
               );
               const beat = beatFor(ctx.stage || 1, ctx.maxStages || 5);
+
+              // show fullscreen spinner immediately for the composing stage
+              ctx.$ui?.loading?.(`Stage ${ctx.stage}: composing scene…`, {
+                step: "stage_structured",
+              });
 
               // brief machine-readable recap to steer development & avoid repeats
               const recap = [
@@ -371,8 +384,10 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                   `\nEnsure forward motion toward a conclusion: each option should clearly change state (progress/tension/resources/relationships).`,
               };
             },
-            label: "stage_structured",
             output(last, ctx) {
+              // clear overlay once the scene is ready
+              ctx.$ui?.clear?.();
+
               const resp = last?.data || {};
               const narrative = resp.response || "";
               const options = Array.isArray(resp.options) ? resp.options : [];
@@ -407,12 +422,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                   actions,
                 },
                 data: {
-                  messages: [
-                    {
-                      role: "assistant",
-                      content: narrative,
-                    },
-                  ],
+                  messages: [{ role: "assistant", content: narrative }],
                 },
               };
             },
@@ -534,10 +544,15 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
         ],
       },
 
-      // 4) Tailored ending based on the whole path + state (await final for best result)
+      // 4) Tailored ending based on the whole path + state (with loader via ctx.$ui)
       {
         tool: "aiChat",
+        awaitFinal: true,
+        label: "ending",
         input(ctx) {
+          // fullscreen loader while composing the ending
+          ctx.$ui?.loading?.("Composing ending…", { step: "ending" });
+
           const meta = MODE_META[ctx.cfg.mode];
           const pathLines = (ctx.path || [])
             .map((p) => `Stage ${p.stage}: ${p.choice}`)
@@ -588,11 +603,14 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             ]),
           };
         },
-        label: "ending",
         output(res, ctx) {
+          // clear overlay when ending is ready
+          ctx.$ui?.clear?.();
+
           const ending =
             res?.data?.content || res?.data?.response || "(ending unavailable)";
-          return ending;
+          ctx.ending = ending;
+          return { ok: true };
         },
       },
 
@@ -635,7 +653,9 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               messages: [
                 {
                   role: "assistant",
-                  content: `**Ending for “${ctx.topic}” (${meta.label})**\n\n${ctx.ending}`,
+                  content: `**Ending for “${ctx.topic}” (${meta.label})**\n\n${
+                    ctx.ending || "(ending unavailable)"
+                  }`,
                 },
                 {
                   role: "assistant",

@@ -41,7 +41,8 @@
     "@loki/utilities": "../utilities",
     "@loki/tasks": "../tasks",
     "@loki/http-base": "../http-base",
-    "@loki/ai-projects": "../ai-projects"
+    "@loki/ai-projects": "../ai-projects",
+    "@loki/events": "../events"
   },
   "peerDependencies": {
     "lit": "^3.3.1"

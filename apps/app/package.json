@@ -26,6 +26,7 @@
     "@loki/template": "../../packages/template",
     "@loki/calendar": "../../packages/calendar",
     "@loki/git": "../../packages/git",
+    "@loki/events": "../../packages/events",
     "lit": "^3.3.1"
   },
   "devDependencies": {

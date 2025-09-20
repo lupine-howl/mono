@@ -1,0 +1,23 @@
+{
+  "name": "@loki/events",
+  "type": "module",
+  "exports": {
+    ".": "./src/services/index.js",
+    "./plugin": "./src/config.plugin.js",
+    "./schemas/*": "./src/schemas/*",
+    "./ui": {
+      "browser": "./src/ui/index.js",
+      "node": "./src/ui/index.server.js",
+      "default": "./src/ui/index.js"
+    },
+    "./tools": "./src/tools/index.js",
+    "./util": "./src/shared/index.js"
+  },
+  "scripts": {},
+  "dependencies": {
+    "@loki/utilities": "../utilities"
+  },
+  "peerDependencies": {
+    "lit": "^3.3.1"
+  }
+}

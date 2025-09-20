@@ -1,6 +1,7 @@
 // src/ui/tool-console.js
 import { LitElement, html, css } from "lit";
 import { ToolsController } from "../shared/ToolsController.js";
+import { createEventsClient } from "@loki/events/util";
 
 const isRecord = (v) => v && typeof v === "object" && !Array.isArray(v);
 
@@ -35,15 +36,79 @@ export class ToolConsole extends LitElement {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      align-items: center;
     }
     .pill {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       padding: 2px 8px;
       border-radius: 999px;
       background: #131317;
       border: 1px solid #1f1f22;
       white-space: nowrap;
     }
+
+    /* Spinner(s) */
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #2a2a30;
+      border-top-color: #e7e7ea;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      display: inline-block;
+    }
+    .spinner.big {
+      width: 48px;
+      height: 48px;
+      border-width: 3px;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Fullscreen loading overlay */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      background: rgba(11, 11, 12, 0.85);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .loading-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 24px;
+      background: #0b0b0c;
+      border: 1px solid #1f1f22;
+      border-radius: 12px;
+      min-width: 260px;
+      max-width: min(520px, 90vw);
+      text-align: center;
+    }
+    .loading-title {
+      font-weight: 600;
+    }
+    .loading-sub {
+      color: #9aa3b2;
+      font-size: 12px;
+    }
+
+    /* In-wrap loading (non-overlay) */
+    .loading-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 140px;
+    }
+
     .row {
       display: flex;
       gap: 8px;
@@ -143,6 +208,11 @@ export class ToolConsole extends LitElement {
     _tool: { state: true },
     _formSchema: { state: true },
     _formValues: { state: true },
+
+    // live streaming ui/loader from events
+    _livePreview: { state: true },
+    // null | { title?, subtitle?, fullscreen? }
+    _liveLoading: { state: true },
   };
 
   constructor() {
@@ -154,6 +224,12 @@ export class ToolConsole extends LitElement {
     this._tool = null;
     this._formSchema = null;
     this._formValues = null;
+
+    this._livePreview = null;
+    this._liveLoading = null;
+
+    this._ev = null;
+    this._evOff = [];
 
     this._onChange = (e) => {
       const d = e.detail ?? {};
@@ -168,6 +244,11 @@ export class ToolConsole extends LitElement {
         this._error = d.error ?? this.controller.error ?? null;
         this._ui = this._pickUi(this._result, this._error);
 
+        if (!this._result?.__PLAN_PAUSED__) {
+          // new concrete result: clear transient overlays/previews
+          this._livePreview = null;
+          this._liveLoading = null;
+        }
         const snap =
           this._result?.data?.form || this._result?.preview?.data?.form;
         if (snap?.schema) {
@@ -182,9 +263,80 @@ export class ToolConsole extends LitElement {
     };
   }
 
+  get _isBrowser() {
+    return typeof window !== "undefined";
+  }
+
+  _subscribeEvents() {
+    if (!this._isBrowser) return;
+    try {
+      this._ev = createEventsClient();
+      this._evOff.push(
+        this._ev.on("ui:loading", (ev) => {
+          console.log(ev);
+          if (!this._matchesEvent(ev)) return;
+          const p = ev?.payload || {};
+          // Clear if explicitly turned off
+          if (p.loading === false) {
+            this._liveLoading = null;
+            this.requestUpdate();
+            return;
+          }
+          // If a full view was provided with the loading event, render that
+          if (p.view && (p.view.ui || p.view.data)) {
+            this._livePreview = p.view;
+          } else {
+            // Otherwise synthesize overlay meta
+            this._liveLoading = {
+              title: p.title || "Loading…",
+              subtitle: p.subtitle || p.note || "",
+              fullscreen: !!(p.fullscreen || p.overlay || true),
+            };
+          }
+          this.requestUpdate();
+        })
+      );
+      this._evOff.push(
+        this._ev.on("ui:update", (ev) => {
+          if (!this._matchesEvent(ev)) return;
+          const v = ev?.payload?.view || ev?.payload;
+          if (v && (v.ui || v.data)) {
+            this._livePreview = v;
+            this._liveLoading = null;
+            this.requestUpdate();
+          }
+        })
+      );
+    } catch {}
+  }
+
+  _unsubscribeEvents() {
+    for (const off of this._evOff) {
+      try {
+        off && off();
+      } catch {}
+    }
+    this._evOff = [];
+  }
+
+  _matchesEvent(ev) {
+    const tname = this._tool?.name;
+    const meta = ev?.meta || {};
+    const p = ev?.payload || {};
+    const name = ev?.name;
+    if (p.runId && this._result?.checkpoint?.meta?.runId) {
+      if (p.runId !== this._result.checkpoint.meta.runId) return false;
+    }
+    if (name && tname && name !== tname) return false; // registry emits { name }
+    if (meta.tool && tname && meta.tool !== tname) return false;
+    if (p.tool && tname && p.tool !== tname) return false;
+    return true;
+  }
+
   async connectedCallback() {
     super.connectedCallback();
     this.controller.addEventListener("tools:change", this._onChange);
+    this._subscribeEvents();
     try {
       await this.controller.ready();
     } catch {}
@@ -203,6 +355,7 @@ export class ToolConsole extends LitElement {
 
   disconnectedCallback() {
     this.controller.removeEventListener("tools:change", this._onChange);
+    this._unsubscribeEvents();
     super.disconnectedCallback();
   }
 
@@ -241,7 +394,6 @@ export class ToolConsole extends LitElement {
 
     if (action.tool === "__resume__") {
       const cp = this._result?.checkpoint;
-      // ✅ merge button args with any live form edits (if any)
       const merged = { ...(this._formValues || {}), ...(action.args || {}) };
       if (cp) this._doResume(cp, merged);
       return;
@@ -264,7 +416,6 @@ export class ToolConsole extends LitElement {
   }
 
   async _doResume(cp, payload = {}) {
-    // keep service values in sync (handy for consumers that read service.values)
     this.controller.setValues(payload);
     await this.controller.resumePlan(cp, payload);
   }
@@ -316,6 +467,15 @@ export class ToolConsole extends LitElement {
   }
 
   // ---------- head / start ----------
+  get _showLoading() {
+    return !!(
+      this.controller.calling ||
+      this._ui?.loading ||
+      this._liveLoading ||
+      this._ui?.kind === "loading"
+    );
+  }
+
   _renderHead(extraRight = null) {
     const title = this._ui?.title || (this._tool?.name ?? "Console");
     const note = this._ui?.note || "";
@@ -323,8 +483,10 @@ export class ToolConsole extends LitElement {
       ${this._tool?.name
         ? html`<span class="pill">tool: ${this._tool.name}</span>`
         : null}
-      ${this.controller.calling
-        ? html`<span class="pill">calling…</span>`
+      ${this._showLoading
+        ? html`<span class="pill" title="Loading"
+            ><span class="spinner"></span> loading…</span
+          >`
         : null}
     </div>`;
     return html` <div class="head">
@@ -378,6 +540,74 @@ export class ToolConsole extends LitElement {
       ${this._renderHead()}
       <div class="err">${String(this._error || "Unknown error")}</div>
     </div>`;
+  }
+
+  // NEW: dedicated loading renderer (supports overlay/fullscreen or in-wrap)
+  _renderLoading() {
+    const ui = this._ui || {};
+    const title = ui.title || "Loading…";
+    const sub =
+      ui.subtitle ||
+      ui.note ||
+      (typeof ui.progress === "number"
+        ? `Please wait (${Math.round(ui.progress * 100)}%)`
+        : "");
+    const overlay = !!(ui.fullscreen || ui.overlay);
+
+    if (overlay) {
+      return html`
+        <div
+          class="loading-overlay"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div class="loading-card">
+            <span class="spinner big" aria-hidden="true"></span>
+            <div class="loading-title">${title}</div>
+            ${sub ? html`<div class="loading-sub">${sub}</div>` : null}
+          </div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div
+        class="wrap loading-wrap"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        ${this._renderHead()}
+        <div
+          style="display:flex; flex-direction:column; align-items:center; gap:8px; padding:18px 6px;"
+        >
+          <span class="spinner big" aria-hidden="true"></span>
+          <div class="loading-title">${title}</div>
+          ${sub ? html`<div class="loading-sub">${sub}</div>` : null}
+        </div>
+      </div>
+    `;
+  }
+
+  _renderLiveLoading() {
+    const m = this._liveLoading;
+    if (!m) return null;
+    // Reuse _renderLoading by temporarily “mounting” a loading ui
+    const save = { r: this._result, u: this._ui };
+    this._result = {
+      ui: {
+        kind: "loading",
+        title: m.title,
+        subtitle: m.subtitle,
+        fullscreen: m.fullscreen,
+      },
+    };
+    this._ui = this._result.ui;
+    const out = this._renderLoading();
+    this._result = save.r;
+    this._ui = save.u;
+    return out;
   }
 
   // BODY ONLY form renderer (used by paused + normal)
@@ -467,19 +697,20 @@ export class ToolConsole extends LitElement {
     });
     return html`<div class="grid">${rows}</div>`;
   }
-  // Render a one-off payload (like pause preview) using existing renderers.
+
+  // Render a one-off payload (like pause preview or live ui:update)
   _renderPreview(payload) {
     if (!payload) return null;
     const ui = payload.ui?.kind ? payload.ui : this._pickUi(payload, null);
 
-    // Temp swap so we can reuse the existing renderers without duplication
     const save = { r: this._result, u: this._ui };
     this._result = payload;
     this._ui = ui;
 
     let out;
     const kind = ui.kind;
-    if (kind === "form") {
+    if (kind === "loading") out = this._renderLoading();
+    else if (kind === "form") {
       const form = payload?.data?.form || {};
       const schema = form.schema || {};
       const values = form.values || {};
@@ -488,9 +719,7 @@ export class ToolConsole extends LitElement {
         <div class="footer">${this.continueBtn}</div>
         ${this._renderActions()}
       </div>`;
-    }
-    //if (kind === "form") out = this._renderForm();
-    else if (kind === "chat") out = this._renderChat();
+    } else if (kind === "chat") out = this._renderChat();
     else if (kind === "image") out = this._renderImage();
     else if (kind === "table") out = this._renderTable();
     else if (kind === "file") out = this._renderFile();
@@ -514,7 +743,6 @@ export class ToolConsole extends LitElement {
 
   _renderPaused() {
     const preview = this._result?.preview;
-
     return html` <div>
       ${preview
         ? this._renderPreview(preview)
@@ -528,13 +756,11 @@ export class ToolConsole extends LitElement {
 
   _renderForm() {
     const form = this._result?.data?.form || {};
-    // Prefer the schema/values that arrived with THIS result; only fall back to cached edits
     const schema = form.schema || this._formSchema || {};
     const values =
       (this._formValues !== null && this._formValues !== undefined
         ? this._formValues
         : form.values) || {};
-    const disabled = this._requiredMissing(schema, values);
     return html` <div class="wrap">
       ${this._renderHead()} ${this._renderFormBody(schema, values)}
       <div class="footer">${this.continueBtn}</div>
@@ -642,21 +868,27 @@ export class ToolConsole extends LitElement {
   }
 
   render() {
-    if (this._error) return this._renderError();
-    if (!this._result && this._tool) return this._renderStart();
-
-    const kind = this._ui?.kind;
-    if (this._result?.__PLAN_PAUSED__) return this._renderPaused();
-    if (kind === "form") return this._renderForm();
-    if (kind === "chat") return this._renderChat();
-    if (kind === "image") return this._renderImage();
-    if (kind === "table") return this._renderTable();
-    if (kind === "file") return this._renderFile();
-    if (kind === "code") return this._renderCode();
-    if (kind === "html") return this._renderHtml();
-    if (kind === "json") return this._renderJson();
-
-    return html`<tool-viewer></tool-viewer>`;
+    let main;
+    if (this._error) main = this._renderError();
+    else if (!this._result && this._tool) main = this._renderStart();
+    else if (this._livePreview && !this._result?.__PLAN_PAUSED__)
+      main = this._renderPreview(this._livePreview);
+    else if (this._result?.__PLAN_PAUSED__) main = this._renderPaused();
+    else {
+      const kind = this._ui?.kind;
+      if (kind === "loading") main = this._renderLoading();
+      else if (kind === "form") main = this._renderForm();
+      else if (kind === "chat") main = this._renderChat();
+      else if (kind === "image") main = this._renderImage();
+      else if (kind === "table") main = this._renderTable();
+      else if (kind === "file") main = this._renderFile();
+      else if (kind === "code") main = this._renderCode();
+      else if (kind === "html") main = this._renderHtml();
+      else if (kind === "json") main = this._renderJson();
+      else main = html`<tool-viewer></tool-viewer>`;
+    }
+    // Always render overlay last so it sits on top (position: fixed)
+    return html`${main}${this._renderLiveLoading()}`;
   }
 }
 

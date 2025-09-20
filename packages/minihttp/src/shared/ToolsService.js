@@ -7,7 +7,7 @@ const isBrowser = typeof window !== "undefined";
 const now = () => new Date().toISOString().slice(11, 23);
 const log = (m, o) => {
   try {
-    console.log(`[ToolsService ${now()}] ${m}`, o);
+    //console.log(`[ToolsService ${now()}] ${m}`, o);
   } catch {}
 };
 
@@ -234,7 +234,6 @@ export class ToolsService extends EventTarget {
     try {
       log("call:rpc.$call ->", { tool: this.toolName, args: this.values });
       const body = await rpc.$call(this.toolName, this.values);
-      console.log(body);
 
       // If server accepted async but did not attach .final, synthesize it
       if (

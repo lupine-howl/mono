@@ -57,9 +57,6 @@ export class ToolingHttpServer extends MiniHttpServer {
 
     // ---- Attach tools AFTER possible registrations ----
     this.tools.attach(this.router, { prefix: this.rpcPrefix });
-    this.tools.mountOpenApi(this.router, this.openApiPath, {
-      prefix: this.rpcPrefix,
-    });
 
     return this;
   }
