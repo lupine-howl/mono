@@ -149,7 +149,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
     return [
       // 0) First page: configuration form
       {
-        run(ctx) {
+        async run(ctx) {
           console.log("flowStoryLab plan run", args, ctx);
           const v = ctx.$input || {};
           const defaults = {
@@ -162,7 +162,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
           ctx.cfg = defaults;
           // clear any lingering overlay just in case
           ctx.$ui?.clear?.();
-          return {
+          ctx.$ui?.open({
             ui: { kind: "form", title: "Story Lab — setup" },
             data: {
               form: {
@@ -210,9 +210,13 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                 values: defaults,
               },
             },
-          };
+          });
+          const { values } = await ctx.awaitUIResume();
+          ctx.cfg = { ...ctx.cfg, ...values };
+          console.log(values);
+          //ctx.$ui.clear();
         },
-        await: "awaiting Story Lab setup",
+        //await: "awaiting Story Lab setup",
         label: "config",
       },
 
@@ -220,23 +224,15 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
       {
         tool: "aiChatList",
         awaitFinal: true,
-        label: "hooks_list",
+
+        //label: "hooks_list",
         input(ctx) {
-          const v = ctx?.form?.data?.form?.values || ctx.cfg || {};
-          ctx.cfg = { ...ctx.cfg, ...v };
-          const meta = MODE_META[v.mode] || MODE_META.ethical_dilemma;
+          const meta = MODE_META[ctx.cfg.mode] || MODE_META.ethical_dilemma;
           // fullscreen spinner immediately
-          ctx.emitUI({
-            type: "ui:loading",
-            payload: {
-              loading: true,
-              message: `Generating ${meta.label} hooks…`,
-              step: "hooks_list",
-            },
-          });
+          //ctx.$ui.loading();
           const prompt = `${meta.listPrompt(
-            v
-          )}\nSafety & reading level: ${AGE_GUARDS(v.age)}.`;
+            ctx.cfg
+          )}\nSafety & reading level: ${AGE_GUARDS(ctx.cfg.age)}.`;
           return { prompt, n: 12 };
         },
         output(args, ctx) {
@@ -268,7 +264,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             },
           };
         },
-        await: "awaiting topic selection",
+        //await: "awaiting topic selection",
       },
 
       // 2) Store selection + initialise loop state

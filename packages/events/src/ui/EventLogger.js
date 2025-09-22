@@ -150,6 +150,7 @@ export class EventLoggerComponent extends LitElement {
     // UI + plan/runner types we emit from the registry/runner bridge
     const types = [
       // ui stream
+      "ui:open",
       "ui:loading",
       "ui:update",
       // plan step lifecycle

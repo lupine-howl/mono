@@ -1,6 +1,6 @@
 // src/shared/plan-runner.js
 // Pure plan execution utilities (no registry, no network)
-import { globalEventBus } from "@loki/events/util";
+import { globalEventBus as bus, createEventsClient } from "@loki/events/util";
 
 const asBool = (v, ...args) => (typeof v === "function" ? !!v(...args) : !!v);
 const asVal = (v, ...args) => (typeof v === "function" ? v(...args) : v);
@@ -41,18 +41,105 @@ export function isPlanTool(t) {
   return !!(t?.plan && typeof t.plan === "function");
 }
 
-function emitUI(event) {
-  // normalized envelope
-  globalEventBus.emit({
+function emitUIOnBus({ type, tool, runId, view = null, extra = null }) {
+  bus.emit({
     ts: Date.now(),
     channel: "ui",
-    ...event,
+    type, // "ui:open" | "ui:update" | "ui:close" | "ui:loading" | ...
+    name: tool,
+    runId,
+    payload: {
+      tool,
+      runId,
+      ...(view || {}),
+      ...(extra || {}),
+    },
   });
 }
 
+function awaitUIResumeFromBus({
+  runId,
+  tool,
+  timeoutMs = 0,
+  predicate = null,
+}) {
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    const off = bus.on((ev) => {
+      if (ev?.channel !== "ui" || ev?.type !== "ui:resume") return;
+      const r = ev.runId || ev?.payload?.runId;
+      const t = ev.name || ev?.payload?.tool;
+      if (runId && r !== runId) return;
+      if (tool && t && t !== tool) return;
+      if (predicate && !predicate(ev)) return;
+
+      try {
+        off && off();
+      } catch {}
+      if (timer) clearTimeout(timer);
+      resolve(ev.payload || {});
+    });
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        try {
+          off && off();
+        } catch {}
+        reject(new Error("ui:resume timeout"));
+      }, timeoutMs);
+    }
+  });
+}
+
+// Attach the helpers onto ctx we send into runPlan/plan steps
+function attachUiHelpersToCtx(ctx, { tool, runId }) {
+  const emitUI = (evtOrView) => {
+    // support both raw events and simple "view" objects
+    if (
+      evtOrView &&
+      typeof evtOrView === "object" &&
+      evtOrView.type?.startsWith?.("ui:")
+    ) {
+      emitUIOnBus({
+        type: evtOrView.type,
+        tool,
+        runId,
+        view: evtOrView.view || null,
+        extra: evtOrView.payload || null,
+      });
+    } else {
+      // treat as a view update by default
+      emitUIOnBus({
+        type: "ui:update",
+        tool,
+        runId,
+        view: evtOrView || null,
+      });
+    }
+  };
+
+  const awaitUIResume = (opts = {}) =>
+    awaitUIResumeFromBus({ runId, tool, ...opts });
+
+  // ergonomic helpers
+  const $ui = {
+    open: (view) => emitUIOnBus({ type: "ui:open", tool, runId, view }),
+    update: (view) => emitUIOnBus({ type: "ui:update", tool, runId, view }),
+    loading: (view) => emitUIOnBus({ type: "ui:loading", tool, runId, view }),
+    close: () => emitUIOnBus({ type: "ui:close", tool, runId }),
+    clear: () => emitUIOnBus({ type: "ui:close", tool, runId }),
+    awaitResume: awaitUIResume,
+  };
+
+  return Object.assign(ctx || {}, { emitUI, awaitUIResume, $ui });
+}
+
 export function makePlan(t, args, ctx) {
-  ctx.emitUI = emitUI;
-  if (typeof t?.plan === "function") return t.plan(args, ctx) || [];
+  const ctxWithUi = attachUiHelpersToCtx(ctx, {
+    tool: name,
+    runId: ctx?.runId || null,
+  });
+  console.log(ctxWithUi);
+  if (typeof t?.plan === "function") return t.plan(args, ctxWithUi) || [];
   return [];
 }
 

@@ -43,15 +43,6 @@ export function createToolRegistry({
     });
   }
 
-  function emitUI(event) {
-    // normalized envelope
-    bus.emit({
-      ts: Date.now(),
-      channel: "ui",
-      ...event,
-    });
-  }
-
   function createRunId() {
     return (
       "run_" + Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -67,7 +58,6 @@ export function createToolRegistry({
     const record = { id, name, args, status: "running", startedAt: Date.now() };
     runs.set(id, record);
     emitRun({ type: "run:started", runId: id, name, args });
-    emitUI({ type: "ui:update" });
 
     (async () => {
       try {
@@ -75,7 +65,6 @@ export function createToolRegistry({
         record.status = "done";
         record.result = result ?? {};
         record.endedAt = Date.now();
-        emitUI({ type: "ui:loading", payload: { loading: false } });
         emitRun({
           type: "run:finished",
           runId: id,
@@ -173,22 +162,7 @@ export function createToolRegistry({
 
   // ---- browser events client (SSE + poll + UI emit) ----
   const baseUrl = (u) => `${(serverUrl || "/").replace(/\/+$/, "")}${u}`;
-  const eventsClient = isBrowser()
-    ? createEventsClient({
-        eventsUrl: baseUrl(eventsPath),
-        ingestUrl: baseUrl(uiEventsPath),
-        fetchRunStatus: async (runId) => {
-          const res = await fetch(
-            baseUrl(`/rpc/runs/${encodeURIComponent(runId)}`),
-            {
-              headers: { Accept: "application/json" },
-            }
-          );
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        },
-      })
-    : null;
+  const eventsClient = isBrowser() ? createEventsClient({}) : null;
 
   async function waitForLocalFinal(runId) {
     return new Promise((resolve, reject) => {

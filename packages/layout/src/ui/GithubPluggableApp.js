@@ -1,6 +1,7 @@
 import { LitElement, html, css } from "lit";
 import { TabController } from "../shared/TabController.js";
 import { FileBrowserController } from "@loki/file-browser/util";
+import "@loki/minihttp/ui/ui-overlay-app.js";
 
 /** Merge any number of {region: UIItem[]} packs, de-dupe by id, sort by order. */
 function mergeComponents(...packs) {
@@ -471,6 +472,7 @@ export class GithubPluggableApp extends LitElement {
 
     return html`
       <!-- App Bar: hamburger + tabs -->
+      <ui-overlay-app></ui-overlay-app>
       <header class="appbar">
         <button
           class="icon-btn"

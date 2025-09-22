@@ -216,6 +216,7 @@ function _getSharedChannel(eventsUrl) {
       "run:error",
       "ui:loading",
       "ui:update",
+      "ui:open",
     ].forEach(onType);
     es.addEventListener("message", forward("message")); // wildcard fallback
 

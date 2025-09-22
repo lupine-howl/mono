@@ -36,7 +36,8 @@
   },
   "dependencies": {
     "@loki/utilities": "../utilities",
-    "@loki/file-browser": "../file-browser"
+    "@loki/file-browser": "../file-browser",
+    "@loki/minihttp": "../minihttp"
   },
   "peerDependencies": {
     "lit": "^3.3.1"
