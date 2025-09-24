@@ -7,6 +7,8 @@
  */
 export const aiListRequest = {
   name: "aiListRequest",
+  useSemanticCache: true,
+
   description:
     "Return a strictly structured list of items. The model MUST call this function with the final items.",
   safe: true,
@@ -52,6 +54,7 @@ export const aiListRequest = {
  */
 export const aiChatList = {
   name: "aiChatList",
+  useSemanticCache: true,
   description:
     "Ask the model for a list of N items via aiRequest using the aiListRequest function; returns a structured array.",
   parameters: {
@@ -99,7 +102,7 @@ export const aiChatList = {
     };
   },
 
-  plan(values) {
+  run(values, ctx) {
     const n = Number.isInteger(values.n) ? values.n : 10;
 
     const hardliner = [
@@ -110,65 +113,30 @@ export const aiChatList = {
       `Do not embed numbering, bullets, or markdown in each item unless the user explicitly asks for it.`,
     ].join("\n");
 
-    return [
-      {
-        tool: "aiRequest",
-        label: "req",
-        awaitFinal: true,
+    const inArgs = {
+      prompt: `${values.prompt}\n\n${hardliner}`,
+      messages: values.messages ?? undefined,
+      model: values.model ?? undefined,
+      temperature: values.temperature ?? undefined,
+      max_tokens: values.max_tokens ?? undefined,
+      max_completion_tokens: values.max_completion_tokens ?? undefined,
+      tool_choice: "auto",
+      force: true,
+      toolName: "aiListRequest",
+    };
 
-        input: {
-          prompt: `${values.prompt}\n\n${hardliner}`,
-          messages: values.messages ?? undefined,
-          model: values.model ?? undefined,
-          temperature: values.temperature ?? undefined,
-          max_tokens: values.max_tokens ?? undefined,
-          max_completion_tokens: values.max_completion_tokens ?? undefined,
-          tool_choice: "auto",
-          force: true,
-          toolName: "aiListRequest",
-        },
-        // IMPORTANT: keep default (optimistic) behavior so the plan can
-        // surface the skeleton immediately, and then swap to final later.
-        // If you ever want to block until the final list, add awaitFinal: true
-        // awaitFinal: true,
+    const items = ctx.$plan("aiListRequest", inArgs);
+    // UI: small table
+    const rows = items.map((text, i) => ({ index: i + 1, item: text }));
+
+    return {
+      ok: true,
+      data: { items },
+      ui: {
+        kind: "table",
+        title: `List (${n})`,
       },
-
-      // Normalize the result so the caller always sees { items: string[] }
-      {
-        finalise: (ctx) => {
-          console.log("aiChatList finalise", { ctx });
-          const d = ctx.req?.data || {};
-          const toolArgs =
-            d.tool_args && typeof d.tool_args === "object" ? d.tool_args : null;
-
-          let items = Array.isArray(toolArgs?.items) ? toolArgs.items : [];
-
-          // Defensive trimming / padding to ensure exactly n
-          if (items.length > n) items = items.slice(0, n);
-          if (items.length < n) {
-            const deficit = n - items.length;
-            items = items.concat(
-              Array.from(
-                { length: deficit },
-                (_, i) => `Item ${items.length + i + 1}`
-              )
-            );
-          }
-
-          // UI: small table
-          const rows = items.map((text, i) => ({ index: i + 1, item: text }));
-
-          return {
-            ok: true,
-            data: { items },
-            ui: {
-              kind: "table",
-              title: `List (${n})`,
-            },
-            rows,
-          };
-        },
-      },
-    ];
+      rows,
+    };
   },
 };

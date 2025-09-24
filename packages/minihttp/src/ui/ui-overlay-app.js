@@ -2,6 +2,7 @@
 import { LitElement, html, css } from "lit";
 import { createEventsClient, getGlobalEventBus } from "@loki/events/util";
 import "./ui-schema-form.js"; // <-- import the form component
+import "./ui-choice.js"; // <-- import the choice component
 
 const MAX_LOG = 200;
 
@@ -254,7 +255,7 @@ export class UiOverlayApp extends LitElement {
   }
 
   #handleEvent(evt) {
-    console.log(evt);
+    //console.log(evt);
     if (!evt?.type?.startsWith?.("ui:")) return;
     if (!this.#matches(evt)) return;
 
@@ -385,6 +386,25 @@ export class UiOverlayApp extends LitElement {
         body = this._renderForm(v);
         break;
       // future: "chat", "image", "table", "html", "code", …
+      case "choice":
+        const actions =
+          Array.isArray(v?.ui?.actions) && v.ui.actions.length
+            ? v.ui.actions
+            : Array.isArray(v?.data?.options)
+            ? v.data.options.map((opt, idx) => ({
+                label: opt,
+                args: { choice: opt, choiceIndex: idx },
+              }))
+            : [];
+
+        body = html`
+          <ui-choice
+            .message=${v?.ui?.message ?? v?.data?.message ?? ""}
+            .actions=${actions}
+            @choose=${(e) => this.#resume(e.detail)}
+          ></ui-choice>
+        `;
+        break;
       default:
         body = html`
           <div class="empty">

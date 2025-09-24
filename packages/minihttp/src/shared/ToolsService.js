@@ -188,6 +188,7 @@ export class ToolsService extends EventTarget {
   // ---------- calls ----------
   /** Uses currently selected tool + values; stores result/error. */
   async call() {
+    console.log("ToolsService.call", this.toolName, this.values);
     if (!this.toolName) return;
     this.calling = true;
     this.result = null;
@@ -195,6 +196,7 @@ export class ToolsService extends EventTarget {
     this._emit("call:start");
     try {
       const body = await rpc.$call(this.toolName, this.values);
+      console.log("ToolsService.call result", body);
       this.result = body;
       this._emit("result", { ok: true });
     } catch (e) {

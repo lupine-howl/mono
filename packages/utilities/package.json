@@ -5,7 +5,11 @@
   "author": "Leo Keith",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "browser": "./src/index.client.js",
+      "node": "./src/index.server.js",
+      "default": "./src/index.client.js"
+    }
   },
   "scripts": {
     "build": "npm i && esbuild src/index.js --bundle --format=esm --platform=node --splitting --outdir=dist --log-level=info"

@@ -12,9 +12,6 @@ import {
 
 const bus = getGlobalEventBus();
 
-toolRegistry.onRunKeyed("ToolsService", (ev) =>
-  bus.emit({ ...ev, channel: "run", ts: Date.now() })
-);
 toolRegistry.defineMany(dbTools);
 
 const config = {

@@ -3,103 +3,17 @@
 
 import { getGlobalSingleton } from "@loki/utilities";
 import { validate } from "./validation.js";
-import { isPlanTool, makePlan, runPlan } from "./plan-runner.js";
-import {
-  getGlobalEventBus,
-  mountEventsSSE,
-  mountEventsIngest,
-  createEventsClient,
-} from "@loki/events/util";
-
+import { globalEventBus as bus } from "@loki/events/util";
 const isBrowser = () => typeof window !== "undefined";
+const serverUrl = isBrowser() ? location.origin : "http://localhost:3000";
+const baseUrl = (u) => `${(serverUrl || "/").replace(/\/+$/, "")}${u}`;
 
-export function createToolRegistry({
-  title = "Tools",
-  version = "0.1.0",
-  serverUrl = isBrowser() ? location.origin : "/",
-  eventsPath = "/rpc/events",
-  uiEventsPath = "/rpc/ui-events",
-} = {}) {
+export function createToolRegistry({} = {}) {
   const tools = new Map();
 
-  // ---- run manager ----
-  const runs = new Map(); // id -> { id, name, args, status, result?, error?, startedAt, endedAt? }
-  const bus = getGlobalEventBus(); // singleton (server app; per-tab on client)
-
-  function onRun(fn) {
-    return bus.on(fn);
-  }
-
-  function onRunKeyed(key, fn) {
-    return bus.onKey(`run:${key}`, fn);
-  }
-
-  function emitRun(event) {
-    // normalized envelope
-    bus.emit({
-      ts: Date.now(),
-      channel: "run",
-      ...event,
-    });
-  }
-
-  function createRunId() {
-    return (
-      "run_" + Math.random().toString(36).slice(2) + Date.now().toString(36)
-    );
-  }
-  function getRun(id) {
-    return runs.get(id) || null;
-  }
-
-  function startAsyncRun(t, name, args, ctx) {
-    const id = createRunId();
-    const id2 = createRunId(); // extra for UI
-    const record = { id, name, args, status: "running", startedAt: Date.now() };
-    runs.set(id, record);
-    emitRun({ type: "run:started", runId: id, name, args });
-
-    (async () => {
-      try {
-        const result = await _runToolImpl(t, name, args, { ...ctx, runId: id });
-        record.status = "done";
-        record.result = result ?? {};
-        record.endedAt = Date.now();
-        emitRun({
-          type: "run:finished",
-          runId: id,
-          name,
-          result: record.result,
-        });
-      } catch (err) {
-        record.status = "error";
-        record.error = String(err?.message || err);
-        record.endedAt = Date.now();
-        emitRun({ type: "run:error", runId: id, name, error: record.error });
-      }
-    })();
-
-    return id;
-  }
-
-  // ---- plan + single-step common impl ----
-  async function _runToolImpl(t, name, args, ctx) {
-    if (isPlanTool(t)) {
-      const plan = makePlan(t, args, ctx);
-      return await runPlan(api, plan, {
-        initialArgs: args,
-        ctx,
-        parentTool: name,
-        toolSpec: t,
-      });
-    }
-    const runServer = t.runServer || t.handler || t.afterRun || t.stub;
-    return await runServer(args, ctx);
-  }
-
-  // ---- parameters helper (supports function schema) ----
   async function resolveParameters(t, ctx) {
     let p = t?.parameters;
+    // If parameters is a function, call it with the context
     if (typeof p === "function") p = p.length > 0 ? await p(ctx) : await p();
     return p || { type: "object", properties: {} };
   }
@@ -115,9 +29,11 @@ export function createToolRegistry({
       beforeRun = null,
       afterRun = null,
       runServer = null,
+      run = null,
       safe = false,
       tags = [],
       plan = null,
+      steps = null,
       output = null,
     } = spec || {};
     if (!name) throw new Error("Tool name required");
@@ -128,6 +44,8 @@ export function createToolRegistry({
       typeof beforeRun === "function" ||
       typeof afterRun === "function" ||
       typeof runServer === "function" ||
+      typeof run === "function" ||
+      typeof steps === "function" ||
       typeof plan === "function";
 
     if (!hasExec)
@@ -146,6 +64,8 @@ export function createToolRegistry({
       safe,
       tags,
       plan,
+      run,
+      steps,
       output,
     });
     return name;
@@ -158,301 +78,6 @@ export function createToolRegistry({
     return Object.entries(dict).map(([name, spec]) =>
       define({ name, ...(spec || {}) })
     );
-  }
-
-  // ---- browser events client (SSE + poll + UI emit) ----
-  const baseUrl = (u) => `${(serverUrl || "/").replace(/\/+$/, "")}${u}`;
-  const eventsClient = isBrowser() ? createEventsClient({}) : null;
-
-  async function waitForLocalFinal(runId) {
-    return new Promise((resolve, reject) => {
-      const current = getRun(runId);
-      if (current) {
-        if (current.status === "done") return resolve(current.result ?? {});
-        if (current.status === "error")
-          return reject(new Error(current.error || "run error"));
-      }
-      const off = onRun((ev) => {
-        if (ev.runId !== runId) return;
-        if (ev.type === "run:finished") {
-          off();
-          resolve(ev.result ?? {});
-        } else if (ev.type === "run:error") {
-          off();
-          reject(new Error(ev.error || "run error"));
-        }
-      });
-    });
-  }
-
-  // ---- remote call helper (browser) ----
-  async function callRemote(name, args = {}) {
-    if (!isBrowser() || typeof fetch !== "function") {
-      throw new Error("Remote calls not supported in this environment");
-    }
-    const url = new URL(baseUrl(`/rpc/${name}`));
-    const res = await fetch(url.toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(args || {}),
-    });
-    const txt = await res.text();
-    if (!res.ok)
-      throw new Error(`HTTP ${res.status}: ${txt || res.statusText}`);
-
-    const json = txt ? JSON.parse(txt) : null;
-    if (json && typeof json === "object" && json.error)
-      throw new Error(String(json.error));
-
-    // Attach .final for async accepts
-    if (json && json.runId) {
-      Object.defineProperty(json, "final", {
-        enumerable: false,
-        value: eventsClient
-          ? eventsClient.awaitFinal(json.runId).then(
-              (result) => result,
-              (err) => ({ ok: false, error: String(err?.message || err) })
-            )
-          : Promise.resolve({ ok: false, error: "No events client" }),
-      });
-    }
-    return json;
-  }
-
-  // ---- core callLocal (single-step + plan) ----
-  async function callLocal(name, args = {}, ctx = {}) {
-    const t = tools.get(name);
-    if (!t) {
-      try {
-        return callRemote(name, args, ctx);
-      } catch (error) {
-        return error;
-      }
-    }
-
-    // Plan tools
-    if (isPlanTool(t)) {
-      if (typeof t.beforeRun === "function") {
-        const hint = await t.beforeRun(args, ctx);
-        if (hint && typeof hint === "object" && hint.async) {
-          if (isBrowser()) {
-            return callRemote(
-              name,
-              {
-                ...(hint.runArgs ?? args),
-                __async: true,
-                __optimistic: hint.optimistic ?? null,
-              },
-              ctx
-            );
-          }
-          const runId = startAsyncRun(t, name, hint.runArgs ?? args, ctx);
-          const out = {
-            runId,
-            status: "accepted",
-            optimistic: hint.optimistic ?? null,
-          };
-          Object.defineProperty(out, "final", {
-            enumerable: false,
-            value: waitForLocalFinal(runId).catch((err) => ({
-              ok: false,
-              error: String(err?.message || err),
-            })),
-          });
-          return out;
-        }
-        if (hint && typeof hint === "object") args = hint;
-      }
-
-      const plan = makePlan(t, args, ctx);
-      const final = await runPlan(api, plan, {
-        initialArgs: args,
-        ctx,
-        parentTool: name,
-        toolSpec: t,
-      });
-      return final;
-    }
-
-    // Single-step tools (validate)
-    const schema = await resolveParameters(t, ctx);
-    let { stub, handler, beforeRun, afterRun, runServer } = t;
-    afterRun = afterRun || stub || null;
-    runServer = runServer || handler || null;
-
-    const v = validate(schema, args);
-    if (!v.ok) throw new Error(v.error);
-
-    if (typeof beforeRun === "function") {
-      const hint = await beforeRun(v.value, ctx);
-      if (hint && typeof hint === "object" && hint.async) {
-        if (isBrowser() && typeof runServer === "function") {
-          return callRemote(
-            name,
-            {
-              ...(hint.runArgs ?? v.value),
-              __async: true,
-              __optimistic: hint.optimistic ?? null,
-            },
-            ctx
-          );
-        }
-        const runId = startAsyncRun(t, name, hint.runArgs ?? v.value, ctx);
-        const out = {
-          runId,
-          status: "accepted",
-          optimistic: hint.optimistic ?? null,
-        };
-        Object.defineProperty(out, "final", {
-          enumerable: false,
-          value: isBrowser()
-            ? eventsClient
-              ? eventsClient.awaitFinal(runId).then(
-                  (result) => result,
-                  (err) => ({ ok: false, error: String(err?.message || err) })
-                )
-              : Promise.resolve({ ok: false, error: "No events client" })
-            : waitForLocalFinal(runId).catch((err) => ({
-                ok: false,
-                error: String(err?.message || err),
-              })),
-        });
-        return out;
-      }
-      if (hint && typeof hint === "object") args = hint;
-    }
-
-    if (isBrowser()) {
-      let runArgs = args;
-      if (typeof runServer === "function") {
-        return callRemote(name, runArgs, ctx).then((result) => {
-          if (typeof afterRun === "function")
-            return afterRun(runArgs, { ...ctx, result });
-          return result;
-        });
-      } else if (typeof afterRun === "function") {
-        return afterRun(runArgs, ctx);
-      }
-    } else if (typeof runServer === "function") {
-      return runServer(args, ctx);
-    }
-  }
-
-  // ---- RPC + OpenAPI attach ----
-  function attach(
-    router,
-    { prefix = "/rpc", events = true, uiIngest = true } = {}
-  ) {
-    router.get(prefix, () => ({ tools: Array.from(tools.keys()) }));
-
-    router.get(`${prefix}/tools`, async (_args, ctx) => ({
-      tools: await toOpenAITools(ctx),
-    }));
-
-    for (const t of tools.values()) {
-      const url = `${prefix}/${t.name}`;
-
-      router.post(url, async (args, ctx) => {
-        const paramSchema = await resolveParameters(t, ctx);
-        const v = validate(paramSchema, args || {});
-        if (!v.ok) return { status: 400, json: { error: v.error } };
-
-        const wantsAsync = !!args?.__async;
-
-        if (isPlanTool(t)) {
-          try {
-            if (wantsAsync) {
-              let runArgs = v.value;
-              let optimistic = args?.__optimistic ?? null;
-              if (typeof t.beforeRun === "function") {
-                const hint = await t.beforeRun(runArgs, ctx);
-                if (hint && typeof hint === "object") {
-                  if (hint.runArgs) runArgs = hint.runArgs;
-                  if ("optimistic" in hint && optimistic == null)
-                    optimistic = hint.optimistic;
-                }
-              }
-              const runId = startAsyncRun(t, t.name, runArgs, ctx);
-              return { status: 202, json: { runId, optimistic } };
-            }
-            const plan = makePlan(t, v.value, ctx);
-            const final = await runPlan(api, plan, {
-              initialArgs: v.value,
-              ctx,
-              parentTool: t.name,
-              toolSpec: t,
-            });
-            return { status: 200, json: final ?? {} };
-          } catch (err) {
-            return {
-              status: 500,
-              json: { error: String(err?.message || err) },
-            };
-          }
-        }
-
-        if (wantsAsync) {
-          let runArgs = v.value;
-          let optimistic = args?.__optimistic ?? null;
-          if (typeof t.beforeRun === "function") {
-            const hint = await t.beforeRun?.(runArgs, ctx); // ✅ correct reference
-            if (hint && typeof hint === "object") {
-              if (hint.runArgs) runArgs = hint.runArgs;
-              if ("optimistic" in hint && optimistic == null)
-                optimistic = hint.optimistic;
-            }
-          }
-          const runId = startAsyncRun(t, t.name, runArgs, ctx);
-          return { status: 202, json: { runId, optimistic } };
-        }
-
-        const result = await (t.handler || t.stub || t.runServer || t.afterRun)(
-          v.value,
-          ctx
-        );
-        return { status: 200, json: result ?? {} };
-      });
-
-      if (t.safe) {
-        router.get(url, async (args, ctx) => {
-          const schema = await resolveParameters(t, ctx);
-          const v = validate(schema, args || {});
-          if (!v.ok) return { status: 400, json: { error: v.error } };
-
-          if (isPlanTool(t)) {
-            try {
-              const plan = makePlan(t, v.value, ctx);
-              const final = await runPlan(api, plan, {
-                initialArgs: v.value,
-                ctx,
-                parentTool: t.name,
-                toolSpec: t,
-              });
-              return { status: 200, json: final ?? {} };
-            } catch (err) {
-              return {
-                status: 500,
-                json: { error: String(err?.message || err) },
-              };
-            }
-          }
-
-          const result = await (t.handler || t.stub)(v.value, ctx);
-          return { status: 200, json: result ?? {} };
-        });
-      }
-    }
-
-    // Run status (used by awaiter polling)
-    router.get(`${prefix}/runs/:id`, (args) => {
-      const id = args?.params?.id || args?.id;
-      const run = getRun(id);
-      if (!run) return { status: 404, json: { error: "Not found" } };
-      return { status: 200, json: run };
-    });
-
-    if (events) mountEventsSSE(router, { path: eventsPath, bus });
-    if (uiIngest) mountEventsIngest(router, { path: uiEventsPath, bus });
   }
 
   async function toOpenAITools(ctx = {}) {
@@ -479,32 +104,311 @@ export function createToolRegistry({
     return tools.get(name) || null;
   }
 
-  async function awaitFinal(runId) {
-    if (isBrowser()) return eventsClient?.awaitFinal(runId);
-    return waitForLocalFinal(runId);
+  function emitUIOnBus({ type, tool, runId, view = null, extra = null }) {
+    bus.emit({
+      ts: Date.now(),
+      channel: "ui",
+      type, // "ui:open" | "ui:update" | "ui:close" | "ui:loading" | ...
+      name: tool,
+      runId,
+      payload: {
+        tool,
+        runId,
+        ...(view || {}),
+        ...(extra || {}),
+      },
+    });
   }
 
-  async function $auto(name, args, apply) {
-    const r = await api.$call(name, args);
-    // apply optimistic first if present
-    if (apply && r && r.optimistic) {
-      try {
-        apply(r.optimistic);
-      } catch {}
-    }
-    // apply immediate final (sync cases)
-    if (apply && r && r.ok) {
-      try {
-        apply(r);
-      } catch {}
-    }
-    // later: apply true final
-    r?.final?.then((fin) => {
-      try {
-        if (fin?.ok || fin?.data) apply?.(fin);
-      } catch {}
+  function awaitUIResumeFromBus({
+    runId,
+    tool,
+    timeoutMs = 0,
+    predicate = null,
+  }) {
+    return new Promise((resolve, reject) => {
+      let timer = null;
+      const off = bus.on((ev) => {
+        if (ev?.channel !== "ui" || ev?.type !== "ui:resume") return;
+        const r = ev.runId || ev?.payload?.runId;
+        const t = ev.name || ev?.payload?.tool;
+        if (runId && r !== runId) return;
+        if (tool && t && t !== tool) return;
+        if (predicate && !predicate(ev)) return;
+
+        off && off();
+
+        if (timer) clearTimeout(timer);
+        resolve(ev.payload || {});
+      });
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          off && off();
+          reject(new Error("ui:resume timeout"));
+        }, timeoutMs);
+      }
     });
-    return r;
+  }
+
+  function attachHelpersToCtx(ctx, { tool, runId }) {
+    const emitUI = (evtOrView) => {
+      // support both raw events and simple "view" objects
+      if (
+        evtOrView &&
+        typeof evtOrView === "object" &&
+        evtOrView.type?.startsWith?.("ui:")
+      ) {
+        emitUIOnBus({
+          type: evtOrView.type,
+          tool,
+          runId,
+          view: evtOrView.view || null,
+          extra: evtOrView.payload || null,
+        });
+      } else {
+        // treat as a view update by default
+        emitUIOnBus({
+          type: "ui:update",
+          tool,
+          runId,
+          view: evtOrView || null,
+        });
+      }
+    };
+
+    // ergonomic helpers
+    const $ui = {
+      open: (view) => emitUIOnBus({ type: "ui:open", tool, runId, view }),
+      update: (view) => emitUIOnBus({ type: "ui:update", tool, runId, view }),
+      loading: (view) => emitUIOnBus({ type: "ui:loading", tool, runId, view }),
+      close: () => emitUIOnBus({ type: "ui:close", tool, runId }),
+      clear: () => emitUIOnBus({ type: "ui:close", tool, runId }),
+      awaitResume: () => awaitUIResumeFromBus({ runId, tool }),
+    };
+
+    return Object.assign(ctx || {}, {
+      emitUI,
+      awaitUIResume: () => awaitUIResumeFromBus({ runId, tool }),
+      $ui,
+      $call: (name, args, ctx) => callSteps(name, args, ctx),
+      $plan: async (toolName, planArgs, toolArgs) => {
+        const res = await ctx.$call(
+          "aiRequest",
+          { force: true, toolName, ...planArgs },
+          toolArgs
+        );
+        const response = res?.data?.tool_args;
+        //console.log(items);
+        return response;
+      },
+      $run: () => {},
+    });
+  }
+
+  function makeRunId() {
+    return (
+      Date.now().toString(36) +
+      "-" +
+      Math.random().toString(36).substring(2, 8) +
+      Math.random().toString(36).substring(2, 8)
+    );
+  }
+
+  async function callSteps(name, args = {}, ctx = {}) {
+    attachHelpersToCtx(ctx, { tool: name, runId: makeRunId() });
+    // Try to find locally; if not found, try remote
+    let steps;
+    const tool = tools.get(name);
+    if (!tool) {
+      try {
+        return callRemote(name, args, ctx);
+      } catch (error) {
+        return error;
+      }
+    }
+    if (tool.steps) {
+      steps =
+        typeof tool.steps === "function"
+          ? await tool.steps(args, ctx)
+          : tool.steps;
+    } else {
+      const tool = tools.get(name);
+      steps = [tool];
+    }
+    //console.log(steps);
+    // execute steps sequentially and return a promise of the final result
+    if (!steps || !Array.isArray(steps) || steps.length === 0)
+      throw new Error(`Tool "${name}" has no steps to execute`);
+    let lastResult = null;
+    for (const step of steps) {
+      if (!step || typeof step !== "object")
+        throw new Error(`Invalid step in tool "${name}"`);
+      // Each step gets the original args + the last result as input
+      //const stepArgs = { ...args, ...(lastResult || {}) };
+      // Each step gets a fresh runId for UI correlation
+      //attachHelpersToCtx(ctx, { tool: step.name, runId: makeRunId() });
+      //console.log("call step", step.name, stepArgs, ctx);
+      //console.log(step);
+      await callLocal(step, args, ctx).then((res) => {
+        lastResult = res;
+        return res;
+      });
+      //console.log("step result", lastResult);
+    }
+    return lastResult;
+  }
+
+  // high quality function with detailed idiomatic comments
+  async function callLocal(tool, args = {}, ctx = {}) {
+    // Found locally; validate args, run plan or handler as needed
+    const schema = await resolveParameters(tool, ctx);
+    let { stub, handler, beforeRun, afterRun, runServer, run } = tool;
+    afterRun = afterRun || stub || null;
+    runServer = runServer || handler || null;
+
+    // If a plan is defined, run it instead of the normal flow
+    const v = validate(schema, args);
+    if (!v.ok) throw new Error(v.error);
+
+    // If no plan, just run the handler/stub/beforeRun/afterRun as appropriate
+    // beforeRun can return { async: true, runArgs: {...} } to indicate remote run
+    let runArgs = args;
+    if (typeof beforeRun === "function") {
+      const hint = await beforeRun(v.value, ctx);
+      runArgs = { ...runArgs, ...hint };
+    }
+
+    // If a execution function is defined, run it instead of the normal flow
+    if (typeof run === "function") {
+      //console.log("tool.run", tool.name, runArgs, ctx);
+      return run(runArgs, ctx);
+    }
+
+    // If afterRun is defined, it takes precedence over local handler/stub
+    if (typeof runServer === "function") {
+      return callRemote(tool.name, runArgs, ctx).then((result) => {
+        // Prefer server-supplied clean args/meta; strip _meta if needed
+        if (typeof afterRun === "function")
+          return afterRun(runArgs, { ...ctx, result });
+        return result;
+      });
+      // If no server handler, just run afterRun locally with original args
+    } else if (typeof afterRun === "function") {
+      return afterRun(runArgs, ctx);
+    }
+  }
+
+  async function callOptimistic(name, args = {}, ctx = {}) {
+    const t = tools.get(name);
+    if (!t) {
+      try {
+        return callRemote(name, args, ctx);
+      } catch (error) {
+        return error;
+      }
+    }
+    // Found locally; validate args, run plan or handler as needed
+    const schema = await resolveParameters(t, ctx);
+    let { stub, handler, beforeRun, afterRun, runServer } = t;
+    afterRun = afterRun || stub || null;
+    runServer = runServer || handler || null;
+    // If a plan is defined, run it instead of the normal flow
+    const v = validate(schema, args);
+    if (!v.ok) throw new Error(v.error);
+    const optimistic = await beforeRun?.(v.value, ctx);
+    const final = callRemote(name, args, ctx);
+    return { ...optimistic, final };
+  }
+
+  // high quality function with detailed idiomatic comments
+  async function callRemote(name, args = {}) {
+    const urlString = `${baseUrl(`/rpc/${name}`)}`;
+    const url = new URL(urlString);
+    let res;
+    try {
+      res = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args || {}),
+        // keepalive: true, // for use in service workers and page unload
+      });
+    } catch (error) {
+      throw new Error(`Network error: ${error.message || error}`);
+    }
+    if (!res) throw new Error("No response");
+    const txt = await res.text();
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status}: ${txt || res.statusText}`);
+
+    const json = txt ? JSON.parse(txt) : null;
+    if (json && typeof json === "object" && json.error)
+      throw new Error(String(json.error));
+
+    return json;
+  }
+
+  function attach(
+    router,
+    { prefix = "/rpc", events = true, uiIngest = true } = {}
+  ) {
+    router.get(prefix, () => ({ tools: Array.from(tools.keys()) }));
+
+    router.get(`${prefix}/tools`, async (_args, ctx) => ({
+      tools: await toOpenAITools(ctx),
+    }));
+
+    for (const t of tools.values()) {
+      const url = `${prefix}/${t.name}`;
+
+      router.post(url, async (args, ctx) => {
+        const semanticCache = await import("./ToolCache.js").then((m) =>
+          m.getSemanticCache()
+        );
+        const paramSchema = await resolveParameters(t, ctx);
+        const v = validate(paramSchema, args || {});
+        if (!v.ok) return { status: 400, json: { error: v.error } };
+        let result;
+        if (t.useSemanticCache || true) {
+          const res = await semanticCache.getOrCompute(
+            { tool: t.name, value: v.value },
+            async () => {
+              //console.log("Tool exec", t.name, v.value);
+              // your slow logic here (LLM call, external API, DB)
+              return await (t.handler || t.stub || t.runServer || t.afterRun)(
+                v.value,
+                ctx
+              );
+            },
+            { ttlMs: 30 * 60 * 1000, threshold: 0.999 }
+          );
+          result = res.result;
+        } else {
+          result = await (t.handler || t.stub || t.runServer || t.afterRun)(
+            v.value,
+            ctx
+          );
+        }
+        return { status: 200, json: result ?? {} };
+      });
+      if (t.safe) {
+        router.get(url, async (args, ctx) => {
+          const schema = await resolveParameters(t, ctx);
+          const v = validate(schema, args || {});
+          if (!v.ok) return { status: 400, json: { error: v.error } };
+
+          const result = await (t.handler || t.stub)(v.value, ctx);
+          return { status: 200, json: result ?? {} };
+        });
+      }
+    }
+
+    // Run status (used by awaiter polling)
+    router.get(`${prefix}/runs/:id`, (args) => {
+      const id = args?.params?.id || args?.id;
+      const run = getRun(id);
+      if (!run) return { status: 404, json: { error: "Not found" } };
+      return { status: 200, json: run };
+    });
   }
 
   const api = {
@@ -513,15 +417,10 @@ export function createToolRegistry({
     list,
     find,
     callLocal,
-    $call: callLocal,
+    $call: callSteps,
+    $optimistic: callOptimistic,
     attach,
     toOpenAITools,
-    runPlan: (steps, opts = {}) => runPlan(api, steps, opts),
-    onRun,
-    onRunKeyed,
-    getRun,
-    awaitFinal,
-    $auto,
   };
   return api;
 }

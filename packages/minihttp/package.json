@@ -36,13 +36,14 @@
     "examples": "npm run build && npm i --prefix examples && npm run build --prefix examples && npm start --prefix examples"
   },
   "dependencies": {
-    "@loki/file-browser": "../file-browser",
-    "@loki/layout": "../layout",
-    "@loki/utilities": "../utilities",
-    "@loki/tasks": "../tasks",
-    "@loki/http-base": "../http-base",
     "@loki/ai-projects": "../ai-projects",
-    "@loki/events": "../events"
+    "@loki/events": "../events",
+    "@loki/file-browser": "../file-browser",
+    "@loki/http-base": "../http-base",
+    "@loki/layout": "../layout",
+    "@loki/tasks": "../tasks",
+    "@loki/utilities": "../utilities",
+    "openai": "^5.23.0"
   },
   "peerDependencies": {
     "lit": "^3.3.1"

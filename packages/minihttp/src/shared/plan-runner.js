@@ -1,6 +1,7 @@
 // src/shared/plan-runner.js
 // Pure plan execution utilities (no registry, no network)
-import { globalEventBus as bus, createEventsClient } from "@loki/events/util";
+import { globalEventBus as bus } from "@loki/events/util";
+import { toolRegistry } from "./toolRegistry.js";
 
 const asBool = (v, ...args) => (typeof v === "function" ? !!v(...args) : !!v);
 const asVal = (v, ...args) => (typeof v === "function" ? v(...args) : v);
@@ -130,12 +131,17 @@ function attachUiHelpersToCtx(ctx, { tool, runId }) {
     awaitResume: awaitUIResume,
   };
 
-  return Object.assign(ctx || {}, { emitUI, awaitUIResume, $ui });
+  return Object.assign(ctx || {}, {
+    emitUI,
+    awaitUIResume,
+    $ui,
+    $call: toolRegistry.callLocal.bind(toolRegistry),
+  });
 }
 
 export function makePlan(t, args, ctx) {
   const ctxWithUi = attachUiHelpersToCtx(ctx, {
-    tool: name,
+    tool: t.name,
     runId: ctx?.runId || null,
   });
   console.log(ctxWithUi);

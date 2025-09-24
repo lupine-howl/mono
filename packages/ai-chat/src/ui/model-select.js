@@ -100,23 +100,14 @@ export class ModelSelect extends LitElement {
   }
 
   async refresh() {
-    this._loading = true;
-    this._error = null;
-
-    await tools.$auto("aiModelsList", {}, (res) => {
-      if (!res?.ok) {
-        this._error = res?.error || "Failed to load models";
-        this._models = [];
-        this._loading = false;
+    const res = await tools.$optimistic("aiModelsList");
+    this._models = res.data || [];
+    this.requestUpdate();
+    res?.final.then(async (finalRes) => {
+      if (finalRes.ok) {
+        this._models = finalRes.data || [];
         this.requestUpdate();
-        return;
       }
-      this._models = res.data?.models || [];
-      if (!this.value && !this._stateModel && this._models.length) {
-        this._applySelection(this._models[0], true);
-      }
-      this._loading = false;
-      this.requestUpdate();
     });
   }
 

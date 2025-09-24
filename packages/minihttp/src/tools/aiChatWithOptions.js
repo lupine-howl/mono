@@ -42,9 +42,6 @@ export const aiOptionsRequest = {
     required: ["response", "options"],
   },
 
-  async stub(values) {
-    return { ok: true, data: values };
-  },
   async handler(values) {
     return { ok: true, data: values };
   },
@@ -84,23 +81,8 @@ export const aiChatWithOptions = {
     required: [],
   },
 
-  beforeRun(values) {
-    const n = Math.max(2, Math.min(4, Number(values?.n) || 3));
-    const opts = Array.from({ length: n }, () => "…");
-    return {
-      async: true,
-      runArgs: values,
-      optimistic: {
-        ok: true,
-        data: { response: "Thinking…", options: opts },
-        ui: { kind: "chat", title: values?.title || "Thinking…" },
-        // Optional: emit disabled actions; or let your step.output build them
-      },
-    };
-  },
-
-  plan(values) {
-    const n = Number.isInteger(values.n) ? values.n : null;
+  async run(args, ctx) {
+    const n = Number.isInteger(args.n) ? args.n : null;
 
     const hardlinerExact = [
       `You MUST call the function tool "aiOptionsRequest" with JSON:`,
@@ -117,77 +99,54 @@ export const aiChatWithOptions = {
       `Do NOT output text outside the function call.`,
     ].join("\n");
 
-    return [
-      {
-        tool: "aiRequest",
-        label: "req",
-        input: {
-          prompt: values.prompt + "\n\n" + (n ? hardlinerExact : hardlinerAuto),
-          messages: values.messages ?? undefined,
-          model: values.model ?? undefined,
-          temperature: values.temperature ?? undefined,
-          max_tokens: values.max_tokens ?? undefined,
-          max_completion_tokens: values.max_completion_tokens ?? undefined,
-          tool_choice: "auto",
-          force: true,
-          toolName: "aiOptionsRequest",
-        },
-      },
+    //console.log("aiChatWithOptions.run", args, ctx);
 
-      // Normalize: always return { response, options } and a small chat preview
-      {
-        finalise: (ctx) => {
-          const d = ctx.req?.data || {};
-          const args =
-            d.tool_args && typeof d.tool_args === "object" ? d.tool_args : null;
+    const inArgs = {
+      prompt: args.prompt + "\n\n" + (n ? hardlinerExact : hardlinerAuto),
+      messages: args.messages ?? undefined,
+    };
 
-          let response =
-            typeof args?.response === "string" ? args.response : "";
-          let options = Array.isArray(args?.options) ? args.options : [];
+    ////console.log("aiChatWithOptions.run inArgs:", inArgs);
+    const res = await ctx.$plan("aiOptionsRequest", inArgs);
+    console.log(res);
 
-          // Defensive constraints (should be guaranteed by tool call)
-          if (n && options.length !== n) {
-            // pad or trim to exactly n (labels are harmless if we had to pad)
-            if (options.length > n) options = options.slice(0, n);
-            if (options.length < n) {
-              const deficit = n - options.length;
-              options = options.concat(
-                Array.from(
-                  { length: deficit },
-                  (_, i) => `Option ${options.length + i + 1}`
-                )
-              );
-            }
-          }
-          // Strip any accidental prefixes like "A) " or "1. "
-          options = options.map((s) =>
-            String(s)
-              .replace(/^\s*(?:[A-Z]\)|\d+[\.)-])\s+/, "")
-              .trim()
-          );
+    let response = typeof res?.response === "string" ? res.response : "";
+    let options = Array.isArray(res?.options) ? res.options : [];
 
-          // Pretty chat preview (no actions; flows can add __resume__ buttons)
-          const content =
-            response +
-            (options.length
-              ? "\n\n" +
-                options
-                  .map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`)
-                  .join("\n")
-              : "");
+    // Defensive constraints (should be guaranteed by tool call)
+    if (n && options.length !== n) {
+      // pad or trim to exactly n (labels are harmless if we had to pad)
+      if (options.length > n) options = options.slice(0, n);
+      if (options.length < n) {
+        const deficit = n - options.length;
+        options = options.concat(
+          Array.from(
+            { length: deficit },
+            (_, i) => `Option ${options.length + i + 1}`
+          )
+        );
+      }
+    }
+    // Strip any accidental prefixes like "A) " or "1. "
+    options = options.map((s) =>
+      String(s)
+        .replace(/^\s*(?:[A-Z]\)|\d+[\.)-])\s+/, "")
+        .trim()
+    );
 
-          return {
-            ok: true,
-            data: { response, options },
-            ui: {
-              kind: "chat",
-              title: "Assistant",
-            },
-            // console renders from data.messages if present (nice preview)
-            messages: [{ role: "assistant", content }],
-          };
-        },
-      },
-    ];
+    // Pretty chat preview (no actions; flows can add __resume__ buttons)
+    const content =
+      response +
+      (options.length
+        ? "\n\n" +
+          options
+            .map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`)
+            .join("\n")
+        : "");
+
+    return {
+      response,
+      options,
+    };
   },
 };

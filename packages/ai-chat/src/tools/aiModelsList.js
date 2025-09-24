@@ -105,10 +105,7 @@ export const aiModelsList = {
   safe: true,
 
   async beforeRun() {
-    return {
-      async: true,
-      optimistic: { ok: true, data: { models: KNOWN_MODELS } },
-    };
+    return { data: KNOWN_MODELS };
   },
 
   async handler(values = {}) {
@@ -151,7 +148,7 @@ export const aiModelsList = {
       return {
         ok: false,
         error: e?.message || String(e),
-        data: { models: [] },
+        data: [],
       };
     }
 
@@ -168,6 +165,6 @@ export const aiModelsList = {
 
     const models = full ? arr : arr.map((m) => m.id).filter(Boolean);
 
-    return { ok: true, data: { models, ...(includeRaw ? { raw: data } : {}) } };
+    return { ok: true, data: models };
   },
 };
