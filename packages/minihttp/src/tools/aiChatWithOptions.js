@@ -51,7 +51,7 @@ export const aiOptionsRequest = {
  * 2) Plan: force the model to call aiOptionsRequest and hand back structured data.
  */
 export const aiChatWithOptions = {
-  name: "aiChatWithOptions",
+  name: "options.compose",
   description:
     "Ask the model for a narrative response PLUS an array of options. Returns { response, options }.",
   parameters: {
@@ -112,38 +112,6 @@ export const aiChatWithOptions = {
 
     let response = typeof res?.response === "string" ? res.response : "";
     let options = Array.isArray(res?.options) ? res.options : [];
-
-    // Defensive constraints (should be guaranteed by tool call)
-    if (n && options.length !== n) {
-      // pad or trim to exactly n (labels are harmless if we had to pad)
-      if (options.length > n) options = options.slice(0, n);
-      if (options.length < n) {
-        const deficit = n - options.length;
-        options = options.concat(
-          Array.from(
-            { length: deficit },
-            (_, i) => `Option ${options.length + i + 1}`
-          )
-        );
-      }
-    }
-    // Strip any accidental prefixes like "A) " or "1. "
-    options = options.map((s) =>
-      String(s)
-        .replace(/^\s*(?:[A-Z]\)|\d+[\.)-])\s+/, "")
-        .trim()
-    );
-
-    // Pretty chat preview (no actions; flows can add __resume__ buttons)
-    const content =
-      response +
-      (options.length
-        ? "\n\n" +
-          options
-            .map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`)
-            .join("\n")
-        : "");
-
     return {
       response,
       options,

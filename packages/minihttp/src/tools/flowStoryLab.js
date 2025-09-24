@@ -1,4 +1,15 @@
-// --- the tool ---
+// flowStoryLab — streamlined with ctx.tools & ctx.ui and small helpers
+
+import {
+  MODE_META,
+  ageGuard,
+  beatFor,
+  clampBranching,
+  makeRecap,
+  evolveStateAfterChoice,
+  makeChoiceActions,
+} from "./flowStoryHelpers.js";
+
 export const flowStoryLab = {
   name: "flowStoryLab",
   description:
@@ -54,101 +65,46 @@ export const flowStoryLab = {
     },
   },
 
-  steps(_args, _ctx) {
-    const MODE_META = {
-      ethical_dilemma: {
-        label: "Ethical dilemma",
-        listPrompt: (cfg) =>
-          `List 12 distinct ${cfg.style} ethical dilemmas suitable for ages ${cfg.age}. Respond as a numbered list of short titles.`,
-        stageSystem: (cfg) =>
-          `You are an expert ethical-dilemma designer. Keep content appropriate for ages ${cfg.age}. Tone: ${cfg.style}.
-Write a brief scene (2–4 sentences) that frames the ethical tension clearly and neutrally.
-Then produce ${cfg.branching} distinct options (short, action-oriented). Avoid graphic content.`,
-        escalate: (nextStage) =>
-          `Escalate the ethical stakes for stage ${nextStage} by introducing a new constraint, trade-off, or stakeholder.`,
-        wrapupNote:
-          "Offer 2–3 short reflection questions that encourage perspective-taking (we'll render separately).",
-      },
-      adventure: {
-        label: "Choose-your-own adventure",
-        listPrompt: (cfg) =>
-          `List 12 ${cfg.style} adventure hooks suitable for ages ${cfg.age}. Numbered list of short titles.`,
-        stageSystem: (cfg) =>
-          `You are an expert adventure designer. Keep content appropriate for ages ${cfg.age}. Tone: ${cfg.style}.
-Write a vivid but concise scene (2–4 sentences) ending in a clear decision point.
-Then produce ${cfg.branching} distinct options (verbs up front).`,
-        escalate: (nextStage) =>
-          `Raise stakes for stage ${nextStage} with a twist, time pressure, or new obstacle.`,
-        wrapupNote:
-          "Write a 2–4 sentence epilogue resolving the most recent choice.",
-      },
-      mystery: {
-        label: "Mystery",
-        listPrompt: (cfg) =>
-          `List 12 ${cfg.style} mystery premises suitable for ages ${cfg.age}. Numbered list of short titles.`,
-        stageSystem: (cfg) =>
-          `You are an expert mystery designer. Keep content appropriate for ages ${cfg.age}. Tone: ${cfg.style}.
-Write a clue-rich scene (2–4 sentences). Then produce ${cfg.branching} investigation options.`,
-        escalate: (nextStage) =>
-          `For stage ${nextStage}, deepen the mystery with a clue, red herring, or suspect behavior.`,
-        wrapupNote:
-          "Reveal the key insight that ties the clues together (no gore).",
-      },
-      survival: {
-        label: "Survival scenario",
-        listPrompt: (cfg) =>
-          `List 12 ${cfg.style} survival scenarios suitable for ages ${cfg.age}. Numbered short titles.`,
-        stageSystem: (cfg) =>
-          `You are an expert survival scenario writer. Keep content appropriate for ages ${cfg.age}. Tone: ${cfg.style}.
-Write a concise survival scene (2–4 sentences). Then produce ${cfg.branching} pragmatic options.`,
-        escalate: (nextStage) =>
-          `For stage ${nextStage}, introduce resource constraints, environment hazards, or time limits.`,
-        wrapupNote: "Summarise the final status and one practical takeaway.",
-      },
-      social_drama: {
-        label: "Social drama",
-        listPrompt: (cfg) =>
-          `List 12 ${cfg.style} school/community social situations suitable for ages ${cfg.age}. Numbered short titles.`,
-        stageSystem: (cfg) =>
-          `You are an expert social scenario designer. Keep content appropriate for ages ${cfg.age}. Tone: ${cfg.style}.
-Write a short scene (2–4 sentences) focusing on relationships and consequences. Then produce ${cfg.branching} options.`,
-        escalate: (nextStage) =>
-          `For stage ${nextStage}, add a social complication (misunderstanding, reputation cost, conflicting goals).`,
-        wrapupNote: "Offer 2 practical de-escalation or repair strategies.",
-      },
-    };
-
-    const AGE_GUARDS = (age) => {
-      switch (age) {
-        case "5-8":
-          return "No violence, no injuries, no romance; simple language (~Grade 2–3). Positive framing, supportive adults.";
-        case "9-12":
-          return "No gore or romance; low peril; age-appropriate language (~Grade 4–6). Emphasise teamwork and learning.";
-        case "13-15":
-          return "PG-level content; no graphic harm. Keep language clean. Emphasise agency and consequences.";
-        case "16-18":
-          return "M-level themes allowed; avoid explicit content. Nuanced consequences; realistic dialogue.";
-        default:
-          return "General content; avoid graphic depictions. Be thoughtful and respectful.";
-      }
-    };
-
-    function beatFor(stage, total) {
-      if (stage <= 1) return "Setup: establish protagonist/goal + gentle hook.";
-      const mid = Math.ceil(total / 2);
-      if (stage === mid) return "Midpoint: reveal twist or reframe the goal.";
-      if (stage === total - 1)
-        return "Crisis: toughest trade-off; consequences from prior choices bite.";
-      if (stage >= total)
-        return "Climax setup: immediate lead-in to ending; choices should be decisive.";
-      return "Rising action: escalate stakes, add constraint, show consequences of last choice.";
+  steps() {
+    // --- tiny helpers that use ctx.tools with graceful fallbacks ---
+    async function listHooks(ctx, prompt) {
+      const { items } = await ctx.tools.aiChatList({ prompt });
+      return items || [];
     }
 
-    // ---------- Plan begins ----------
+    async function composeOptions(ctx, { branching, system, messages }) {
+      // preferred: options.compose
+      try {
+        return await ctx.tools.options.compose({
+          n: branching,
+          system,
+          messages,
+        });
+      } catch {
+        // back-compat: aiChatWithOptions
+        return await ctx.$call("aiChatWithOptions", {
+          n: branching,
+          system,
+          messages,
+        });
+      }
+    }
+
+    async function chatEnding(ctx, messages) {
+      // preferred: ai.chat
+      try {
+        return await ctx.tools.ai.chat({ messages });
+      } catch {
+        // back-compat: aiChatRequest plan
+        return await ctx.$plan("aiChatRequest", { messages });
+      }
+    }
+
     return [
-      // 0) First page: configuration form
+      // 0) Setup form
       {
-        async run(args, ctx) {
+        label: "setup_form",
+        async run(_args, ctx) {
           const v = ctx.$input || {};
           const defaults = {
             mode: v.mode ?? "ethical_dilemma",
@@ -159,8 +115,8 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
           };
           ctx.cfg = defaults;
 
-          ctx.$ui?.clear?.();
-          ctx.$ui?.open({
+          ctx.ui.clear();
+          ctx.ui.open({
             ui: { kind: "form", title: "Story Lab — setup" },
             data: {
               form: {
@@ -209,24 +165,24 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               },
             },
           });
-          const { values } = await ctx.awaitUIResume();
+
+          const { values } = await ctx.ui.awaitResume();
           ctx.cfg = { ...ctx.cfg, ...values };
         },
-        label: "setup_form",
       },
 
       // 1) Generate hooks and pick topic
       {
-        async run(args, ctx) {
+        label: "pick_topic",
+        async run(_args, ctx) {
           const meta = MODE_META[ctx.cfg.mode] || MODE_META.ethical_dilemma;
           const prompt = `${meta.listPrompt(
             ctx.cfg
-          )}\nSafety & reading level: ${AGE_GUARDS(ctx.cfg.age)}.`;
+          )}\nSafety & reading level: ${ageGuard(ctx.cfg.age)}.`;
 
-          const { items } = await ctx.$plan("aiListRequest", { prompt });
-          ctx.hooks = items || [];
+          ctx.hooks = await listHooks(ctx, prompt);
 
-          ctx.$ui?.update({
+          ctx.ui.update({
             ui: { kind: "form", title: `Pick a ${meta.label}` },
             data: {
               form: {
@@ -246,18 +202,17 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             },
           });
 
-          const { values } = await ctx.awaitUIResume();
+          const { values } = await ctx.ui.awaitResume();
           ctx.topic = values?.topic || ctx.hooks?.[0] || "Untitled Topic";
         },
-        label: "pick_topic",
       },
 
-      // 2) Initialise loop state
+      // 2) Init loop state
       {
-        run(args, ctx) {
+        label: "init_loop_state",
+        run(_args, ctx) {
           ctx.maxStages = Number(ctx.cfg?.stages) || 5;
           ctx.stage = 1;
-
           ctx.state = {
             progress: 0,
             tension: 0,
@@ -267,7 +222,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             motifs: new Set(),
             lastSummary: "",
           };
-
           ctx.transcriptStages = [];
           ctx.path = [];
           ctx.messages = [
@@ -281,61 +235,41 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
                 `\nAccount for evolving state and consequences. Avoid repeating earlier obstacles.`,
             },
           ];
-
           return { ok: true };
         },
-        label: "init_loop_state",
       },
 
-      // 3) Loop stages (one stage per resume)
+      // 3) Stage loop
       {
-        async run(args, ctx) {
+        label: "stage_loop",
+        async run(_args, ctx) {
           while (ctx.stage <= ctx.maxStages) {
-            const branching = Math.max(
-              2,
-              Math.min(4, Number(ctx.cfg?.branching) || 3)
-            );
+            const branching = clampBranching(ctx.cfg?.branching);
             const beat = beatFor(ctx.stage || 1, ctx.maxStages || 5);
-
-            // Recap to steer generation
-            const recap = [
-              ctx.state.lastSummary
-                ? `Recent recap: ${ctx.state.lastSummary}`
-                : "",
-              ctx.path?.length
-                ? `Last choice: ${ctx.path[ctx.path.length - 1].choice}`
-                : "",
-              ctx.state.flags?.length
-                ? `Flags: ${ctx.state.flags.join(", ")}`
-                : "",
-              ctx.state.inventory?.length
-                ? `Inventory/Clues: ${ctx.state.inventory.join(", ")}`
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" | ");
-
+            const recap = makeRecap(ctx);
             const avoidList = Array.from(ctx.state.motifs || []).slice(-10);
 
-            const resp = await ctx.$call("aiChatWithOptions", {
-              n: branching,
+            const system =
+              MODE_META[ctx.cfg.mode].stageSystem({ ...ctx.cfg, branching }) +
+              `\nBeat for this stage: ${beat}` +
+              `\nEvolve the situation based on the recap below. Add NEW elements; avoid repeating past obstacles/motifs.` +
+              (recap ? `\n${recap}` : "") +
+              (avoidList.length
+                ? `\nAvoid repeating motifs: ${avoidList.join(", ")}`
+                : "") +
+              `\nEnsure forward motion toward a conclusion: each option should clearly change state (progress/tension/resources/relationships).`;
+
+            const resp = await composeOptions(ctx, {
+              branching,
+              system,
               messages: ctx.messages ? ctx.messages.slice(-12) : undefined,
-              system:
-                MODE_META[ctx.cfg.mode].stageSystem({ ...ctx.cfg, branching }) +
-                `\nBeat for this stage: ${beat}` +
-                `\nEvolve the situation based on the recap below. Add NEW elements; avoid repeating past obstacles/motifs.` +
-                (recap ? `\n${recap}` : "") +
-                (avoidList.length
-                  ? `\nAvoid repeating motifs: ${avoidList.join(", ")}`
-                  : "") +
-                `\nEnsure forward motion toward a conclusion: each option should clearly change state (progress/tension/resources/relationships).`,
             });
 
             const narrative = resp?.response || "";
             const options =
               Array.isArray(resp?.options) && resp.options.length
                 ? resp.options
-                : ["Continue"]; // fallback
+                : ["Continue"];
 
             ctx.currentNarrative = narrative;
             ctx.currentOptions = options;
@@ -345,14 +279,7 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               content: narrative + "\nOPTIONS:" + JSON.stringify(options),
             });
 
-            // Present choices
-            const actions = options.map((opt, idx) => ({
-              label: opt,
-              tool: "__resume__", // semantic only; ui-overlay uses @choose
-              args: { choice: opt, choiceIndex: idx },
-            }));
-
-            // Stage transcript entry
+            // show choice
             ctx.transcriptStages.push({
               stage: ctx.stage,
               beat,
@@ -360,102 +287,41 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               options,
               choice: null,
             });
-
-            ctx.$ui.update({
+            ctx.ui.update({
               ui: {
                 kind: "choice",
                 title: `Stage ${ctx.stage}: ${ctx.topic}`,
                 message: narrative,
-                actions,
+                actions: makeChoiceActions(options),
               },
             });
 
-            // Wait for user choice
-            const choiceResponse = await ctx.awaitUIResume();
+            const picked = await ctx.ui.awaitResume();
             const chosen =
-              choiceResponse?.values?.choice ??
-              options[choiceResponse?.values?.choiceIndex ?? 0] ??
+              picked?.values?.choice ??
+              options[picked?.values?.choiceIndex ?? 0] ??
               options[0];
 
-            // Attach choice to last transcript stage
-            const lastEntry =
-              ctx.transcriptStages[ctx.transcriptStages.length - 1];
+            // attach choice
+            const lastEntry = ctx.transcriptStages.at(-1);
             if (lastEntry) lastEntry.choice = chosen;
 
-            // Track path + user message
+            // path + prime next turn
             (ctx.path ||= []).push({ stage: ctx.stage, choice: chosen });
             ctx.messages.push({ role: "user", content: `I choose: ${chosen}` });
 
-            // Simple state evolution
-            const total = ctx.maxStages || 5;
-            const step = 1 / Math.max(2, total);
-            ctx.state.progress = Math.min(1, (ctx.state.progress || 0) + step);
-            ctx.state.tension = Math.min(1, (ctx.state.tension || 0) + 0.15);
+            // evolve state
+            evolveStateAfterChoice(ctx, chosen);
 
-            // Flags/motifs/inventory heuristics
-            const lower = String(chosen).toLowerCase();
-            const tags = [];
-            if (lower.includes("help") || lower.includes("ally"))
-              tags.push("ally_gained");
-            if (lower.includes("wait") || lower.includes("hide"))
-              tags.push("time_cost");
-            if (
-              lower.includes("risk") ||
-              lower.includes("steal") ||
-              lower.includes("fight")
-            )
-              tags.push("risk_taken");
-            if (
-              lower.includes("evidence") ||
-              lower.includes("map") ||
-              lower.includes("tool")
-            )
-              tags.push("resource_found");
-            if (
-              lower.includes("apolog") ||
-              lower.includes("repair") ||
-              lower.includes("trust")
-            )
-              tags.push("relationship_repair");
-            ctx.state.flags.push(...tags);
-            if (tags.includes("resource_found"))
-              ctx.state.inventory.push(`asset@stage${ctx.stage}`);
-            if (tags.includes("ally_gained"))
-              ctx.state.relations["ally"] = Math.min(
-                1,
-                (ctx.state.relations["ally"] || 0) + 0.5
-              );
-
-            // Rolling summary
-            const last2 = ctx.transcriptStages
-              .slice(-2)
-              .map((s) => `${s.stage}:${s.choice ?? "—"}`)
-              .join(", ");
-            ctx.state.lastSummary = `Progress ${
-              (ctx.state.progress * 100) | 0
-            }%, tension ${
-              (ctx.state.tension * 100) | 0
-            }% — recent choices ${last2}`;
-
-            // Remember motifs from narrative
-            (ctx.currentNarrative || "")
-              .split(/\W+/)
-              .filter((w) => w && w.length > 4)
-              .slice(0, 8)
-              .forEach((m) => ctx.state.motifs.add(m.toLowerCase()));
-
-            // Prepare next stage/system guidance
+            // next stage steering
             const nextStage = (ctx.stage || 1) + 1;
             const meta = MODE_META[ctx.cfg.mode];
-            let steer = "";
-            if (nextStage === ctx.maxStages) {
-              steer =
-                "Set up the decisive confrontation leading directly to the ending. Remove side quests.";
-            } else if (nextStage > ctx.maxStages) {
-              steer = "No new options; we are heading to the ending.";
-            } else {
-              steer = meta.escalate(nextStage);
-            }
+            let steer =
+              nextStage === ctx.maxStages
+                ? "Set up the decisive confrontation leading directly to the ending. Remove side quests."
+                : nextStage > ctx.maxStages
+                ? "No new options; we are heading to the ending."
+                : meta.escalate(nextStage);
 
             ctx.messages.push({
               role: "system",
@@ -469,20 +335,19 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             });
 
             ctx.stage = nextStage;
-
-            // If we've passed the max, break to move to ending step
             if (ctx.stage > ctx.maxStages) break;
           }
-
           return { ok: true };
         },
-        label: "stage_loop",
       },
 
-      // 4) Tailored ending based on the whole path + state
+      // 4) Ending
       {
-        async run(args, ctx) {
-          ctx.$ui?.loading?.("Composing ending…", { step: "ending" });
+        label: "ending",
+        async run(_args, ctx) {
+          ctx.ui.loading({
+            ui: { kind: "loading", title: "Composing ending…" },
+          });
 
           const meta = MODE_META[ctx.cfg.mode];
           const pathLines = (ctx.path || [])
@@ -508,46 +373,42 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
               ? "Resolve relationships with believable consequences and at least one repair step."
               : "Deliver a satisfying adventure climax and falling action; keep it punchy.";
 
-          const guard = AGE_GUARDS(ctx.cfg.age);
+          const guard = ageGuard(ctx.cfg.age);
 
-          const inArgs = {
-            messages: ctx.messages.concat([
-              {
-                role: "system",
-                content:
-                  `You craft endings that pay off prior decisions. Tone: ${ctx.cfg.style}. Audience ages: ${ctx.cfg.age}. ${guard}\n` +
-                  `Write a fitting ending in 4–8 sentences. It must flow naturally from the path and state below.`,
-              },
-              {
-                role: "user",
-                content:
-                  `STORY MODE: ${meta.label}\nTOPIC: ${ctx.topic}\n` +
-                  `PATH:\n${pathLines || "(no choices)"}\n\n` +
-                  `BEATS:\n${beats}\n\n` +
-                  `STATE: progress=${ctx.state?.progress}, tension=${
-                    ctx.state?.tension
-                  }, flags=${(ctx.state?.flags || []).join(", ")}, inventory=${(
-                    ctx.state?.inventory || []
-                  ).join(", ")}\n\n` +
-                  `ENDING SPEC: ${endingSpec}`,
-              },
-            ]),
-          };
-          const finalResponse = await ctx.$plan("aiChatRequest", inArgs);
-          console.log(finalResponse);
-          ctx.$ui?.clear?.();
-          const ending =
-            finalResponse?.content ||
-            finalResponse?.response ||
-            "(ending unavailable)";
-          ctx.ending = ending;
+          const messages = ctx.messages.concat([
+            {
+              role: "system",
+              content:
+                `You craft endings that pay off prior decisions. Tone: ${ctx.cfg.style}. Audience ages: ${ctx.cfg.age}. ${guard}\n` +
+                `Write a fitting ending in 4–8 sentences. It must flow naturally from the path and state below.`,
+            },
+            {
+              role: "user",
+              content:
+                `STORY MODE: ${meta.label}\nTOPIC: ${ctx.topic}\n` +
+                `PATH:\n${pathLines || "(no choices)"}\n\n` +
+                `BEATS:\n${beats}\n\n` +
+                `STATE: progress=${ctx.state?.progress}, tension=${
+                  ctx.state?.tension
+                }, flags=${(ctx.state?.flags || []).join(", ")}, inventory=${(
+                  ctx.state?.inventory || []
+                ).join(", ")}\n\n` +
+                `ENDING SPEC: ${endingSpec}`,
+            },
+          ]);
+
+          const final = await chatEnding(ctx, messages);
+          ctx.ui.clear();
+          ctx.ending =
+            final?.content || final?.response || "(ending unavailable)";
           return { ok: true };
         },
       },
 
-      // 5) Wrap-up & full transcript
+      // 5) Wrap-up
       {
-        run(args, ctx) {
+        label: "wrap_up",
+        run(_args, ctx) {
           const meta = MODE_META[ctx.cfg.mode];
 
           const fullTranscript = (ctx.transcriptStages || [])
@@ -598,7 +459,6 @@ Write a short scene (2–4 sentences) focusing on relationships and consequences
             },
           };
         },
-        label: "wrap_up",
       },
     ];
   },

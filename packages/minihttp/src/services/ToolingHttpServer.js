@@ -2,6 +2,7 @@
 import { toolRegistry } from "../shared/toolRegistry.js";
 import { MiniHttpServer } from "@loki/http-base";
 import { PassThrough } from "node:stream";
+import { attachToolRoutes } from "../shared/toolRoutes.js";
 
 export class ToolingHttpServer extends MiniHttpServer {
   constructor({
@@ -56,7 +57,7 @@ export class ToolingHttpServer extends MiniHttpServer {
     });
 
     // ---- Attach tools AFTER possible registrations ----
-    this.tools.attach(this.router, { prefix: this.rpcPrefix });
+    attachToolRoutes(this.router, { prefix: this.rpcPrefix });
 
     return this;
   }

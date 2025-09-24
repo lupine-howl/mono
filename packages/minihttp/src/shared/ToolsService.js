@@ -1,8 +1,9 @@
 // src/shared/ToolsService.js
-// Minimal, drop-in compatible + plan resume helpers
+// Minimal client-side helper for listing tools, selecting one, and calling it.
+// Uses the new runner `call()` (local-or-remote), no registry coupling.
 
 import { getGlobalSingleton } from "@loki/utilities";
-import { toolRegistry as rpc } from "./toolRegistry.js";
+import { call as callTool } from "./toolRunner.js";
 
 const isBrowser = () =>
   typeof window !== "undefined" && typeof localStorage !== "undefined";
@@ -22,7 +23,6 @@ export class ToolsService extends EventTarget {
     this.calling = false;
     this.result = null;
     this.error = null;
-    this.method = "POST";
 
     this._ready = null;
   }
@@ -39,14 +39,15 @@ export class ToolsService extends EventTarget {
       calling: this.calling,
       result: this.result,
       error: this.error,
-      method: this.method,
     };
   }
+
   subscribe(fn) {
     const h = (e) => fn(this.get(), e.detail);
     this.addEventListener("change", h);
     return () => this.removeEventListener("change", h);
   }
+
   _emit(type, extra = {}) {
     this.dispatchEvent(
       new CustomEvent("change", { detail: { type, ...this.get(), ...extra } })
@@ -63,7 +64,7 @@ export class ToolsService extends EventTarget {
     this.error = null;
     this._emit("tools:loading");
     try {
-      // try /rpc/tools (structured); else fallback to /rpc (names)
+      // Prefer structured list from /rpc/tools; fallback to /rpc names.
       let tools = await this._fetchToolsList(`${this.src}/tools`);
       if (!tools) tools = await this._fetchNamesList(this.src);
       this.tools = this._normalizeTools(tools);
@@ -97,10 +98,11 @@ export class ToolsService extends EventTarget {
       const j = await r.json();
       const arr = Array.isArray(j?.tools) ? j.tools : null;
       if (!arr) return null;
+      // Router returns OpenAI-style tool objects or a similar shape
       return arr.map((it) =>
         it?.function
           ? {
-              name: it.function.name,
+              name: it.function.name, // underscore wire name
               description: it.function.description,
               parameters: it.function.parameters,
             }
@@ -110,6 +112,7 @@ export class ToolsService extends EventTarget {
       return null;
     }
   }
+
   async _fetchNamesList(url) {
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -117,6 +120,7 @@ export class ToolsService extends EventTarget {
     const names = Array.isArray(j?.tools) ? j.tools : [];
     return names.map((n) => ({ name: String(n) }));
   }
+
   _normalizeTools(list) {
     const out = [];
     const seen = new Set();
@@ -143,20 +147,14 @@ export class ToolsService extends EventTarget {
     this.toolName = name;
     if (isBrowser()) localStorage.setItem(this.storageKey, name);
     this.tool = this.tools.find((t) => t.name === name) || null;
-    // parameters can be a function (sync/async)
-    this.schema =
-      typeof this.tool?.parameters === "function"
-        ? await this.tool.parameters()
-        : this.tool?.parameters || { type: "object", properties: {} };
+
+    // Parameters may already be provided by /rpc/tools; otherwise default.
+    this.schema = this.tool?.parameters || { type: "object", properties: {} };
+
     this.values = this._defaultValues(this.schema);
     this.result = null;
     this.error = null;
     this._emit("select");
-  }
-
-  setMethod(method = "POST") {
-    this.method = String(method || "POST").toUpperCase();
-    this._emit("method");
   }
 
   setValues(next = {}) {
@@ -187,17 +185,15 @@ export class ToolsService extends EventTarget {
 
   // ---------- calls ----------
   /** Uses currently selected tool + values; stores result/error. */
-  async call() {
-    console.log("ToolsService.call", this.toolName, this.values);
+  async call(ctx = {}) {
     if (!this.toolName) return;
     this.calling = true;
     this.result = null;
     this.error = null;
     this._emit("call:start");
     try {
-      const body = await rpc.$call(this.toolName, this.values);
-      console.log("ToolsService.call result", body);
-      this.result = body;
+      const res = await callTool(this.toolName, this.values, ctx);
+      this.result = res;
       this._emit("result", { ok: true });
     } catch (e) {
       this.error = String(e?.message || e);
@@ -209,14 +205,14 @@ export class ToolsService extends EventTarget {
   }
 
   /** One-off execution; does not mutate selection/result. */
-  async invoke(name, args = {}) {
+  async invoke(name, args = {}, ctx = {}) {
     if (!name) throw new Error("invoke: missing tool name");
     this.calling = true;
     this._emit("call:start", { invoked: name });
     try {
-      const body = await rpc.$call(name, args);
+      const res = await callTool(name, args, ctx);
       this._emit("invoke:result", { ok: true });
-      return body;
+      return res;
     } catch (e) {
       this._emit("invoke:result", {
         ok: false,
@@ -229,93 +225,12 @@ export class ToolsService extends EventTarget {
     }
   }
 
-  /** Alias (clearer API for UI) */
-  async invokeNamed(name, args = {}) {
-    return this.invoke(name, args);
-  }
-
   /** Select a tool, set args, call it, and keep result in state. */
-  async callNamed(name, args = {}) {
+  async callNamed(name, args = {}, ctx = {}) {
     if (!name) throw new Error("callNamed: missing tool name");
     await this.setTool(name);
     this.setValues(args || {});
-    await this.call();
-  }
-
-  /** Remote-only execution bypassing stubs. (kept for parity; same as $call here) */
-  async invokeRemote(name, args = {}) {
-    if (!name) throw new Error("invokeRemote: missing tool name");
-    return rpc.$call(name, args);
-  }
-
-  // ---------- plan resume / cancel ----------
-  /**
-   * Resume a paused plan using a checkpoint returned by the registry plan runner.
-   * Works locally by recomputing the original plan (tool.plan) and calling registry.runPlan
-   * with resumeFrom, using the saved ctx from the checkpoint.
-   */
-  // src/shared/ToolsService.js
-  // src/shared/ToolsService.js
-  async resumePlan(checkpoint, payload = {}) {
-    if (!checkpoint || (!checkpoint.tool && !checkpoint.parentTool)) {
-      throw new Error("resumePlan: invalid checkpoint");
-    }
-    const toolName = checkpoint.tool || checkpoint.parentTool;
-    const t = rpc.find(toolName);
-    if (!t || typeof t.plan !== "function") {
-      throw new Error(`resumePlan: tool "${toolName}" is not a plan tool`);
-    }
-
-    console.log(checkpoint, payload);
-
-    // 1) Merge submitted form values
-    const ctx = { ...(checkpoint.ctx || {}) };
-    const merged = { ...(ctx.$input || {}), ...(payload || {}) };
-    ctx.$input = merged;
-
-    console.log("resume payload:", payload);
-    console.log("merged $input:", ctx.$input);
-
-    // Mirror into controller-visible args (helps tools that read service.values)
-    this.values = { ...(this.values || {}), ...merged };
-
-    // 2) Rebuild steps using *merged* args
-    const steps = t.plan(merged, ctx) || [];
-
-    this.calling = true;
-    this._emit("plan:resume:start", { checkpoint, toolName });
-
-    try {
-      const final = await rpc.runPlan(steps, {
-        initialArgs: merged, // <<< important
-        ctx, // <<< has $input = merged
-        parentTool: toolName,
-        toolSpec: t,
-        resumeFrom: (checkpoint.index ?? 0) + 1,
-      });
-      this.result = final;
-      this.error = null;
-      this._emit("result", { ok: true, resumed: true });
-      return final;
-    } catch (e) {
-      const msg = String(e?.message || e);
-      this.error = msg;
-      this._emit("result", { ok: false, resumed: true, error: msg });
-      throw e;
-    } finally {
-      this.calling = false;
-      this._emit("call:done");
-    }
-  }
-
-  /**
-   * UI-level cancel (no registry state to clear) — clears current result and emits an event.
-   * You can extend this to call a dedicated cancel tool if you later add one.
-   */
-  cancelPlan(checkpoint) {
-    this._emit("plan:cancel", { checkpoint });
-    // leave last result visible or clear it, your call:
-    // this.clearResult();
+    await this.call(ctx);
   }
 }
 

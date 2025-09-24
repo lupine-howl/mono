@@ -1,35 +1,35 @@
-import { rpc } from "@loki/minihttp/util";
+import { call } from "@loki/minihttp/util";
 
 export const gitStatus = () => {
-  return rpc.$call("gitStatus");
+  return call("gitStatus");
 };
 export const gitAdd = () => {
-  return rpc.$call("gitAdd");
+  return call("gitAdd");
 };
 export const gitRestore = () => {
-  return rpc.$call("gitRestore");
+  return call("gitRestore");
 };
 export const gitCommit = () => {
-  return rpc.$call("gitCommit");
+  return call("gitCommit");
 };
 export const gitLog = () => {
-  return rpc.$call("gitLog");
+  return call("gitLog");
 };
 export const gitDiff = () => {
-  return rpc.$call("gitDiff");
+  return call("gitDiff");
 };
 export const gitBranchList = () => {
-  return rpc.$call("gitBranchList");
+  return call("gitBranchList");
 };
 export const gitCheckout = () => {
-  return rpc.$call("gitCheckout");
+  return call("gitCheckout");
 };
 export const gitPush = () => {
-  return rpc.$call("gitPush");
+  return call("gitPush");
 };
 export const gitPull = () => {
-  return rpc.$call("gitPull");
+  return call("gitPull");
 };
 export const gitGenerateCommit = () => {
-  return rpc.$call("gitGenerateCommit");
+  return call("gitGenerateCommit");
 };
